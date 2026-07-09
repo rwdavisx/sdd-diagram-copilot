@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js example/project.yaml",
-    "build": "npm --prefix web run build"
+    "build": "npm --prefix web run build",
+    "test": "node --test"
   },
   "license": "MIT",
   "dependencies": {
