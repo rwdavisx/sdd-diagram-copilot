@@ -1,0 +1,34 @@
+name: diagram-copilot
+description: Spec-driven development workbench - visualize project.yaml and drive the superpowers workflow
+
+items:
+  - id: workflow-session-runner
+    name: Workflow session runner + chat
+    type: integration
+    status: planned
+    spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
+    notes: Agent SDK integration, SSE relay, input endpoint, Workflow tab with transcript + chat, start + brainstorm step.
+
+  - id: workflow-orchestration
+    name: Step orchestration + artifact detection
+    type: backend
+    status: planned
+    spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
+    depends: [workflow-session-runner]
+    notes: Full six-step state machine, step prompts, artifact-based completion, workflow.json persistence, stepper UI.
+
+  - id: workflow-execute-viz
+    name: Execute/TDD/review visualization
+    type: frontend
+    status: planned
+    spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
+    depends: [workflow-orchestration]
+    notes: Stream parsing (Task/Bash/TodoWrite), task grid, red-green TDD timeline, review findings panel.
+
+  - id: workflow-finish-polish
+    name: Finish step + resilience polish
+    type: integration
+    status: planned
+    spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
+    depends: [workflow-execute-viz]
+    notes: Finish buttons (merge/PR/keep/discard), resume/retry, interrupted/error states.
