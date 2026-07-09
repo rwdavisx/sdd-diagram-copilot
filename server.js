@@ -166,6 +166,10 @@ function main() {
       return sendJson(res, 200, loadProject(args.yamlPath));
     }
 
+    if (url.pathname === '/api/priority') {
+      return sendJson(res, 200, computePriority(loadProject(args.yamlPath).items));
+    }
+
     if (url.pathname === '/api/spec') {
       const rel = url.searchParams.get('path') || '';
       const resolved = path.resolve(projectDir, rel);
