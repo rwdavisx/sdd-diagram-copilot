@@ -10,6 +10,8 @@ Use the superpowers:brainstorming skill to refine this idea into an approved des
 When the design is approved: save the spec to specs/${item.id}.md, set this item's spec field in project.yaml to specs/${item.id}.md, and commit both.${item.notes ? `\nExisting notes: ${item.notes}` : ''}`;
 }
 
+let runCounter = 0;
+
 function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
   const stateFile = path.join(projectDir, '.superpowers', 'workflow.json');
   const transcript = [];
@@ -40,7 +42,8 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
     broadcast(ev);
   }
 
-  function onEvent(ev) {
+  function onEvent(run, ev) {
+    if (run !== runCounter) return; // stale run; a newer run is active
     if (ev.kind === 'session-start') { state = { ...state, sessionId: ev.sessionId }; persist(); }
     record(ev);
     // Artifact-based completion: the brainstorm step is done when the skill
@@ -57,14 +60,16 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
     if (!item) return { error: `Unknown item "${itemId}"`, code: 400 };
     if (item.status === 'shipped') return { error: `"${itemId}" is already shipped`, code: 400 };
 
+    const run = ++runCounter;
     transcript.length = 0;
     seq = 0;
     state = { itemId, step: 'brainstorm', stepStatus: 'running', sessionId: null, startedAt: new Date().toISOString() };
     persist();
     broadcast({ kind: 'workflow', state });
 
-    session = runSession({ initialPrompt: brainstormPrompt(item), cwd: projectDir, onEvent });
+    session = runSession({ initialPrompt: brainstormPrompt(item), cwd: projectDir, onEvent: (ev) => onEvent(run, ev) });
     session.done.then(({ ok, error }) => {
+      if (run !== runCounter) return; // stale run; a newer run is active
       if (state.stepStatus === 'running') {
         setStatus('needs-attention', { error: error || (ok ? 'Session ended before the spec was saved' : 'Session failed') });
       }
@@ -74,8 +79,8 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
 
   function input(text) {
     if (!session || !state || state.stepStatus !== 'running') return false;
+    if (!session.send(text)) return false;
     record({ kind: 'user-text', text });
-    session.send(text);
     return true;
   }
 

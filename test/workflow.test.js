@@ -139,3 +139,33 @@ test('a persisted running workflow loads as interrupted after restart', () => {
 test('brainstormPrompt omits the notes line when the item has none', () => {
   assert.doesNotMatch(brainstormPrompt({ id: 'x', name: 'X' }), /notes/i);
 });
+
+test('a stale run\'s late onEvent/done do not touch the new run\'s state or transcript', async () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a'); // run A
+  fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'specs', 'feat-a.md'), '# spec');
+  sessions[0].args.onEvent({ kind: 'turn-end', ok: true, costUsd: 0 }); // completes run A
+  assert.strictEqual(wf.getState().stepStatus, 'done');
+
+  wf.start('feat-a'); // run B
+  const runAOnEvent = sessions[0].args.onEvent;
+  const runAFinish = sessions[0].finish;
+  const stateBefore = wf.getState();
+  const transcriptBefore = wf.getTranscript().slice();
+
+  runAFinish({ ok: true, sessionId: 's1' }); // run A's done resolves late
+  await new Promise((r) => setImmediate(r));
+  runAOnEvent({ kind: 'turn-end', ok: true, costUsd: 0 }); // run A's onEvent fires late
+
+  assert.deepStrictEqual(wf.getState(), stateBefore);
+  assert.deepStrictEqual(wf.getTranscript(), transcriptBefore);
+});
+
+test('input returns false and records nothing when session.send fails', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  sessions[0].send = () => false;
+  assert.strictEqual(wf.input('lost message'), false);
+  assert.strictEqual(wf.getTranscript().length, 0);
+});

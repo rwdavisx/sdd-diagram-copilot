@@ -129,6 +129,14 @@ function computePriority(items) {
   };
 }
 
+// Rejects cross-origin POSTs (LAN/CSRF) while allowing same-origin and
+// no-Origin requests (curl, same-origin fetches that omit it).
+function originAllowed(req, port) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  return origin === `http://localhost:${port}` || origin === `http://127.0.0.1:${port}`;
+}
+
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
@@ -196,6 +204,7 @@ function main() {
     }
 
     if (url.pathname === '/api/workflow/start' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
       return readBody(req).then((body) => {
         let itemId = null;
         try { itemId = JSON.parse(body).itemId; } catch { /* handled below */ }
@@ -206,6 +215,7 @@ function main() {
     }
 
     if (url.pathname === '/api/workflow/input' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
       return readBody(req).then((body) => {
         let text = null;
         try { text = JSON.parse(body).text; } catch { /* handled below */ }
@@ -258,7 +268,7 @@ function main() {
     });
   });
 
-  server.listen(args.port, () => {
+  server.listen(args.port, '127.0.0.1', () => {
     const addr = `http://localhost:${args.port}`;
     console.log(`diagram-copilot serving ${args.yamlPath}`);
     console.log(`  ${addr}`);

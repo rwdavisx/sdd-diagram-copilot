@@ -5,7 +5,7 @@ items:
   - id: workflow-session-runner
     name: Workflow session runner + chat
     type: integration
-    status: planned
+    status: in-progress
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
     notes: Agent SDK integration, SSE relay, input endpoint, Workflow tab with transcript + chat, start + brainstorm step.
 
