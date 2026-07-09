@@ -112,6 +112,14 @@ main { flex: 1; display: flex; min-height: 0; }
 .card-name { font-weight: 600; }
 .card-meta { display: flex; align-items: center; gap: 8px; }
 
+/* ---------- priority ---------- */
+.priority { padding: 16px; overflow-y: auto; flex: 1; }
+.priority-list { max-width: 680px; margin: 0 auto; padding-left: 32px; }
+.priority-list li { margin-bottom: 8px; }
+.priority-list .card { width: 100%; text-align: left; }
+.ready-flag { color: var(--shipped); font-weight: 600; }
+.blocked-flag { color: var(--planned); }
+
 /* ---------- detail panel ---------- */
 .detail {
   width: 360px; flex-shrink: 0;

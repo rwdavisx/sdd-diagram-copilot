@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import DiagramView from './DiagramView.jsx';
 import BoardView from './BoardView.jsx';
+import PriorityView from './PriorityView.jsx';
 import DetailPanel from './DetailPanel.jsx';
 import './App.css';
 
@@ -45,6 +46,7 @@ export default function App() {
         <div className="toggle">
           <button className={view === 'diagram' ? 'active' : ''} onClick={() => setView('diagram')}>Diagram</button>
           <button className={view === 'board' ? 'active' : ''} onClick={() => setView('board')}>Board</button>
+          <button className={view === 'priority' ? 'active' : ''} onClick={() => setView('priority')}>Priority</button>
         </div>
       </header>
 
@@ -56,9 +58,9 @@ export default function App() {
       )}
 
       <main>
-        {view === 'diagram'
-          ? <DiagramView items={items} selectedId={selectedId} onSelect={setSelectedId} />
-          : <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'diagram' && <DiagramView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
         {selected && (
           <DetailPanel item={selected} items={items} onSelect={setSelectedId} onClose={() => setSelectedId(null)} />
         )}
