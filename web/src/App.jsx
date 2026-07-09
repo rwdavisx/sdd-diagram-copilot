@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import DiagramView from './DiagramView.jsx';
 import BoardView from './BoardView.jsx';
 import PriorityView from './PriorityView.jsx';
+import WorkflowView from './WorkflowView.jsx';
 import DetailPanel from './DetailPanel.jsx';
 import './App.css';
 
@@ -18,6 +19,14 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => { setData(d); setLoadError(null); })
       .catch((e) => setLoadError(String(e)));
+  }, []);
+
+  const startWorkflow = useCallback((itemId) => {
+    fetch('/api/workflow/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemId }),
+    }).finally(() => setView('workflow'));
   }, []);
 
   useEffect(() => {
@@ -47,6 +56,7 @@ export default function App() {
           <button className={view === 'diagram' ? 'active' : ''} onClick={() => setView('diagram')}>Diagram</button>
           <button className={view === 'board' ? 'active' : ''} onClick={() => setView('board')}>Board</button>
           <button className={view === 'priority' ? 'active' : ''} onClick={() => setView('priority')}>Priority</button>
+          <button className={view === 'workflow' ? 'active' : ''} onClick={() => setView('workflow')}>Workflow</button>
         </div>
       </header>
 
@@ -60,9 +70,10 @@ export default function App() {
       <main>
         {view === 'diagram' && <DiagramView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
-        {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
+        {view === 'workflow' && <WorkflowView items={items} />}
         {selected && (
-          <DetailPanel item={selected} items={items} onSelect={setSelectedId} onClose={() => setSelectedId(null)} />
+          <DetailPanel item={selected} items={items} onSelect={setSelectedId} onClose={() => setSelectedId(null)} onStartWorkflow={startWorkflow} />
         )}
       </main>
     </div>

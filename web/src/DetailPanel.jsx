@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Markdown from 'react-markdown';
 
-export default function DetailPanel({ item, items, onSelect, onClose }) {
+export default function DetailPanel({ item, items, onSelect, onClose, onStartWorkflow }) {
   const [spec, setSpec] = useState(null); // { text } | { error } | null while loading
 
   useEffect(() => {
@@ -28,6 +28,9 @@ export default function DetailPanel({ item, items, onSelect, onClose }) {
         <span className={`badge type-${item.type}`}>{item.type}</span>
         <span className={`badge status-badge status-${item.status}`}>{item.status}</span>
       </div>
+      {item.status !== 'shipped' && (
+        <button className="wf-start" onClick={() => onStartWorkflow(item.id)}>▶ Start workflow</button>
+      )}
 
       {item.notes && <p className="detail-notes">{item.notes}</p>}
 

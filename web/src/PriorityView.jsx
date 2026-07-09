@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export default function PriorityView({ items, selectedId, onSelect }) {
+export default function PriorityView({ items, selectedId, onSelect, onStartWorkflow }) {
   const [data, setData] = useState(null);
 
   // Refetch whenever project data changes (items is fresh on every reload).
@@ -38,6 +38,9 @@ export default function PriorityView({ items, selectedId, onSelect }) {
                 {item.cycle && <span className="blocked-flag">dependency cycle</span>}
               </div>
             </button>
+            {item.status !== 'shipped' && (
+              <button className="wf-start" title="Start workflow" onClick={() => onStartWorkflow(item.id)}>▶</button>
+            )}
           </li>
         ))}
       </ol>
