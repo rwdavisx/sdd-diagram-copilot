@@ -1,0 +1,52 @@
+project: Example Shop
+items:
+  - id: login-page
+    name: Login Page
+    type: frontend
+    status: shipped
+    spec: specs/login-page.md
+    depends: [auth-api]
+
+  - id: product-list
+    name: Product List
+    type: frontend
+    status: in-progress
+    spec: specs/product-list.md
+    depends: [catalog-api]
+    notes: Infinite scroll still flaky on mobile.
+
+  - id: checkout-flow
+    name: Checkout Flow
+    type: frontend
+    status: planned
+    depends: [orders-api, payments]
+
+  - id: auth-api
+    name: Auth API
+    type: backend
+    status: shipped
+    spec: specs/auth-api.md
+
+  - id: catalog-api
+    name: Catalog API
+    type: backend
+    status: in-progress
+    spec: specs/catalog-api.md
+
+  - id: orders-api
+    name: Orders API
+    type: backend
+    status: planned
+    depends: [payments, email]
+
+  - id: payments
+    name: Stripe Payments
+    type: integration
+    status: planned
+    notes: Waiting on Stripe account approval.
+
+  - id: email
+    name: Transactional Email
+    type: integration
+    status: shipped
+    spec: specs/email.md

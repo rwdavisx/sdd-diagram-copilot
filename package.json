@@ -1,0 +1,14 @@
+{
+  "name": "diagram-copilot",
+  "version": "0.1.0",
+  "description": "Visual dashboard for spec-driven development: renders a project.yaml of frontend/backend/integration items with planned/in-progress/shipped state.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js example/project.yaml",
+    "build": "npm --prefix web run build"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "js-yaml": "^5.2.1"
+  }
+}

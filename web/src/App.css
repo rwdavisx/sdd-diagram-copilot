@@ -1,0 +1,148 @@
+.app { display: flex; flex-direction: column; height: 100%; }
+.fatal { padding: 40px; color: var(--muted); }
+
+/* ---------- header ---------- */
+header {
+  display: flex; align-items: center; gap: 20px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 17px; }
+.counts { display: flex; gap: 12px; flex: 1; }
+.count { color: var(--muted); font-size: 13px; }
+.count::before { content: '●'; margin-right: 5px; }
+.count.status-planned::before { color: var(--planned); }
+.count.status-in-progress::before { color: var(--in-progress); }
+.count.status-shipped::before { color: var(--shipped); }
+
+.toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.toggle button { border: 0; background: var(--panel); padding: 5px 14px; color: var(--muted); }
+.toggle button.active { background: var(--text); color: #fff; }
+
+/* ---------- validation errors ---------- */
+.errors {
+  background: #fdf1f1; color: #8c2f2f;
+  border-bottom: 1px solid #ecc8c8;
+  padding: 8px 16px; font-size: 13px;
+}
+.errors ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* ---------- layout ---------- */
+main { flex: 1; display: flex; min-height: 0; }
+.diagram { flex: 1; }
+.board { flex: 1; display: flex; gap: 14px; padding: 16px; overflow: auto; }
+
+/* ---------- shared badges ---------- */
+.badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 9px;
+  color: #fff; text-transform: lowercase;
+}
+.badge.type-frontend { background: var(--frontend); }
+.badge.type-backend { background: var(--backend); }
+.badge.type-integration { background: var(--integration); }
+.badge.status-badge.status-planned { background: var(--planned); }
+.badge.status-badge.status-in-progress { background: var(--in-progress); }
+.badge.status-badge.status-shipped { background: var(--shipped); }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.status-planned { background: var(--planned); }
+.dot.status-in-progress { background: var(--in-progress); }
+.dot.status-shipped { background: var(--shipped); }
+
+.spec-flag { font-size: 11px; color: var(--shipped); }
+.spec-flag.missing { color: var(--muted); font-style: italic; }
+
+/* ---------- diagram nodes ---------- */
+.flow-node {
+  width: 200px; min-height: 64px;
+  background: var(--panel);
+  border: 2px solid var(--border);
+  border-left-width: 6px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.flow-node.status-planned { border-left-color: var(--planned); }
+.flow-node.status-in-progress { border-left-color: var(--in-progress); }
+.flow-node.status-shipped { border-left-color: var(--shipped); }
+.flow-node.selected { border-color: var(--text); box-shadow: 0 0 0 2px rgba(31, 36, 48, 0.15); }
+.flow-node-name { font-weight: 600; font-size: 13px; }
+.flow-node-meta { display: flex; align-items: center; gap: 8px; }
+
+.react-flow__node.lane {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+.lane-label {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 8px 12px;
+}
+.react-flow__edge.flow-edge path.react-flow__edge-path { stroke: #9aa3af; stroke-width: 1.5; }
+
+/* ---------- board ---------- */
+.column {
+  flex: 1; min-width: 220px;
+  background: #eef0f3;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  align-self: flex-start;
+}
+.column h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.column-count { font-weight: 400; margin-left: 4px; }
+.column-empty { color: var(--muted); font-size: 13px; font-style: italic; padding: 6px 2px; }
+
+.card {
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.card.status-planned { border-left-color: var(--planned); }
+.card.status-in-progress { border-left-color: var(--in-progress); }
+.card.status-shipped { border-left-color: var(--shipped); }
+.card.selected { border-color: var(--text); }
+.card-name { font-weight: 600; }
+.card-meta { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- detail panel ---------- */
+.detail {
+  width: 360px; flex-shrink: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  overflow-y: auto;
+  position: relative;
+}
+.detail h2 { font-size: 16px; margin-bottom: 8px; padding-right: 28px; }
+.detail h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 14px 0 6px; }
+.detail h3 code { text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.detail-close {
+  position: absolute; top: 10px; right: 12px;
+  border: 0; background: none; font-size: 20px; color: var(--muted); line-height: 1;
+}
+.detail-meta { display: flex; gap: 8px; }
+.detail-notes { color: var(--muted); margin: 12px 0 0; }
+.detail-links .link {
+  display: inline-block; margin: 0 6px 6px 0;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); padding: 3px 9px; font-size: 13px;
+}
+.detail-links .link.broken { color: var(--planned); }
+.spec-missing { color: var(--muted); font-style: italic; }
+.spec-body {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 14px; font-size: 13px; line-height: 1.55;
+  background: var(--bg);
+  overflow-x: auto;
+}
+.spec-body pre { background: #eceef1; padding: 10px; border-radius: 6px; overflow-x: auto; }
+.spec-body code { background: #eceef1; padding: 1px 4px; border-radius: 4px; }
+.spec-body pre code { background: none; padding: 0; }
