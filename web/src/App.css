@@ -1,5 +1,6 @@
 .app { display: flex; flex-direction: column; height: 100%; }
 .fatal { padding: 40px; color: var(--muted); }
+.loading { padding: 24px; opacity: 0.6; }
 
 /* ---------- header ---------- */
 header {

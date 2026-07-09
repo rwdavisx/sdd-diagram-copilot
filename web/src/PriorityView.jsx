@@ -13,7 +13,7 @@ export default function PriorityView({ items, selectedId, onSelect }) {
     return () => { stale = true; };
   }, [items]);
 
-  if (!data) return <div className="fatal">Loading…</div>;
+  if (!data) return <div className="loading">Loading…</div>;
 
   return (
     <div className="priority">

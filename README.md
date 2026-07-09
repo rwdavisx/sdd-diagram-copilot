@@ -32,6 +32,7 @@ npm start              # serves example/project.yaml on http://localhost:4400
 - **Diagram** — items laid out in three lanes (frontend / backend /
   integration); dependency edges from `depends`; border color = status.
 - **Board** — kanban columns for planned / in-progress / shipped.
+- **Priority** — non-shipped items in dependency order; ready items first, blocked items show their blockers.
 - **Detail panel** — click any item: notes, dependency links both directions,
   and the spec markdown rendered inline. "No spec yet" is the signal that an
   item still needs planning.

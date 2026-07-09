@@ -56,4 +56,13 @@ const fixture = [
   assert.deepStrictEqual(items[0].blockedBy, []);
 }
 
+{
+  // equal dependents count -> tie broken by id ascending
+  const { items } = computePriority([
+    item('bravo', 'planned'),
+    item('alpha', 'planned'),
+  ]);
+  assert.deepStrictEqual(items.map((i) => i.id), ['alpha', 'bravo']);
+}
+
 console.log('priority tests: ok');

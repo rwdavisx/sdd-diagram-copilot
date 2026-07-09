@@ -96,7 +96,7 @@ function computePriority(items) {
     dependents.get(b.id) - dependents.get(a.id) || a.id.localeCompare(b.id);
 
   // Ready items first, then Kahn's algorithm over the blocked ones.
-  // ponytail: O(n^2) frontier rescan; fine for hand-edited project files.
+  // ponytail: O(n^3) worst case (dependents BFS + frontier rescan); fine for hand-edited project files.
   const ready = pending.filter((i) => blockers(i).length === 0).sort(byRank);
   const done = new Set(ready.map((i) => i.id));
   const ordered = [...ready];
