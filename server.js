@@ -137,7 +137,7 @@ function sendJson(res, status, body) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (c) => { body += c; if (body.length > 1e6) req.destroy(); });
+    req.on('data', (c) => { body += c; if (body.length > 1e6) req.destroy(new Error('Body too large')); });
     req.on('end', () => resolve(body));
     req.on('error', reject);
   });
@@ -202,7 +202,7 @@ function main() {
         if (!itemId) return sendJson(res, 400, { error: 'itemId required' });
         const r = workflow.start(itemId);
         return r.error ? sendJson(res, r.code, { error: r.error }) : sendJson(res, 200, r.state);
-      });
+      }).catch(() => sendJson(res, 400, { error: 'Invalid request body' }));
     }
 
     if (url.pathname === '/api/workflow/input' && req.method === 'POST') {
@@ -213,7 +213,7 @@ function main() {
         return workflow.input(String(text))
           ? sendJson(res, 200, { ok: true })
           : sendJson(res, 409, { error: 'No running workflow session' });
-      });
+      }).catch(() => sendJson(res, 400, { error: 'Invalid request body' }));
     }
 
     if (url.pathname === '/api/spec') {
