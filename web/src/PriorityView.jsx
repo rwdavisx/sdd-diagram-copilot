@@ -5,10 +5,12 @@ export default function PriorityView({ items, selectedId, onSelect }) {
 
   // Refetch whenever project data changes (items is fresh on every reload).
   useEffect(() => {
+    let stale = false;
     fetch('/api/priority')
       .then((r) => r.json())
-      .then(setData)
-      .catch(() => setData(null));
+      .then((d) => { if (!stale) setData(d); })
+      .catch(() => { if (!stale) setData(null); });
+    return () => { stale = true; };
   }, [items]);
 
   if (!data) return <div className="fatal">Loading…</div>;
