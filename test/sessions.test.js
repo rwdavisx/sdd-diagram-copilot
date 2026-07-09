@@ -68,3 +68,70 @@ test('toUiEvents: irrelevant messages produce nothing', () => {
   assert.deepStrictEqual(toUiEvents({ type: 'user' }), []);
   assert.deepStrictEqual(toUiEvents(null), []);
 });
+
+const { startSession } = require('../sessions');
+
+function fakeQueryFn(messages, { onPrompt } = {}) {
+  return async ({ prompt }) => {
+    if (onPrompt) onPrompt(prompt);
+    return (async function* () {
+      for (const m of messages) yield m;
+    })();
+  };
+}
+
+test('startSession relays flattened events and resolves done with the session id', async () => {
+  const seen = [];
+  const session = startSession({
+    initialPrompt: 'go',
+    cwd: '.',
+    onEvent: (ev) => seen.push(ev),
+    queryFn: fakeQueryFn([
+      { type: 'system', subtype: 'init', session_id: 'sid-1', model: 'm' },
+      { type: 'assistant', session_id: 'sid-1', message: { content: [{ type: 'text', text: 'hello' }] } },
+      { type: 'result', subtype: 'success', is_error: false, session_id: 'sid-1', total_cost_usd: 0.1 },
+    ]),
+  });
+  const result = await session.done;
+  assert.deepStrictEqual(result, { ok: true, sessionId: 'sid-1' });
+  assert.deepStrictEqual(seen.map((e) => e.kind), ['session-start', 'assistant-text', 'turn-end']);
+});
+
+test('startSession seeds the input stream with the initial prompt', async () => {
+  let captured;
+  const session = startSession({
+    initialPrompt: 'the initial prompt',
+    cwd: '.',
+    onEvent: () => {},
+    queryFn: async ({ prompt }) => {
+      const first = await prompt[Symbol.asyncIterator]().next();
+      captured = first.value;
+      return (async function* () {})();
+    },
+  });
+  await session.done;
+  assert.strictEqual(captured.message.content[0].text, 'the initial prompt');
+});
+
+test('startSession resolves done with ok:false when the SDK throws', async () => {
+  const session = startSession({
+    initialPrompt: 'go',
+    cwd: '.',
+    onEvent: () => {},
+    queryFn: async () => { throw new Error('spawn failed'); },
+  });
+  const result = await session.done;
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /spawn failed/);
+});
+
+test('send() after close() is refused', async () => {
+  const session = startSession({
+    initialPrompt: 'go',
+    cwd: '.',
+    onEvent: () => {},
+    queryFn: fakeQueryFn([]),
+  });
+  await session.done;
+  assert.strictEqual(session.send('more'), false);
+});

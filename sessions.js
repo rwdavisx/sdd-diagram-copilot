@@ -69,4 +69,50 @@ function toUiEvents(msg) {
   return [];
 }
 
-module.exports = { createInputQueue, userMessage, summarizeToolInput, toUiEvents };
+async function defaultQueryFn(args) {
+  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+  return query(args);
+}
+
+// Start a headless Claude Code session with streaming input. The session
+// stays alive across turns until close() (or an SDK error) ends it.
+function startSession({ initialPrompt, cwd, resume, onEvent, queryFn = defaultQueryFn }) {
+  const input = createInputQueue();
+  input.push(userMessage(initialPrompt));
+  let q = null;
+  let sessionId = resume || null;
+
+  const done = (async () => {
+    try {
+      q = await queryFn({
+        prompt: input,
+        options: {
+          cwd,
+          resume,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+          systemPrompt: { type: 'preset', preset: 'claude_code' },
+          settingSources: ['user', 'project'],
+        },
+      });
+      for await (const msg of q) {
+        if (msg.session_id) sessionId = msg.session_id;
+        for (const ev of toUiEvents(msg)) onEvent(ev);
+      }
+      return { ok: true, sessionId };
+    } catch (e) {
+      return { ok: false, sessionId, error: e.message };
+    } finally {
+      input.close();
+    }
+  })();
+
+  return {
+    send: (text) => input.push(userMessage(text)),
+    close: () => input.close(),
+    interrupt: async () => { if (q && q.interrupt) await q.interrupt().catch(() => {}); },
+    done,
+  };
+}
+
+module.exports = { createInputQueue, userMessage, summarizeToolInput, toUiEvents, startSession };
