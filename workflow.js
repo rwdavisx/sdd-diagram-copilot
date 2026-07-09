@@ -15,6 +15,7 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
   const transcript = [];
   let state = null;
   let session = null;
+  let seq = 0;
 
   try {
     state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
@@ -34,6 +35,7 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
   }
 
   function record(ev) {
+    ev = { seq: seq++, ...ev };
     transcript.push(ev);
     broadcast(ev);
   }
@@ -56,6 +58,7 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
     if (item.status === 'shipped') return { error: `"${itemId}" is already shipped`, code: 400 };
 
     transcript.length = 0;
+    seq = 0;
     state = { itemId, step: 'brainstorm', stepStatus: 'running', sessionId: null, startedAt: new Date().toISOString() };
     persist();
     broadcast({ kind: 'workflow', state });

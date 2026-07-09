@@ -4,6 +4,11 @@ import Markdown from 'react-markdown';
 const post = (url, body) =>
   fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
+const mergeTranscript = (a, b) => {
+  const bySeq = new Map([...a, ...b].map((ev) => [ev.seq, ev]));
+  return [...bySeq.values()].sort((x, y) => x.seq - y.seq);
+};
+
 export default function WorkflowView({ items }) {
   const [wf, setWf] = useState(null); // { state, transcript }
   const [text, setText] = useState('');
@@ -14,7 +19,12 @@ export default function WorkflowView({ items }) {
     let stale = false;
     fetch('/api/workflow')
       .then((r) => r.json())
-      .then((d) => { if (!stale) setWf(d); })
+      .then((d) => {
+        if (stale) return;
+        setWf((cur) => cur
+          ? { state: cur.state ?? d.state, transcript: mergeTranscript(d.transcript, cur.transcript) }
+          : d);
+      })
       .catch(() => { if (!stale) setWf({ state: null, transcript: [] }); });
     const es = new EventSource('/api/events');
     es.addEventListener('workflow', (e) => {
@@ -25,7 +35,7 @@ export default function WorkflowView({ items }) {
           const isNewRun = ev.state.stepStatus === 'running' && base.state?.startedAt !== ev.state.startedAt;
           return { state: ev.state, transcript: isNewRun ? [] : base.transcript };
         }
-        return { ...base, transcript: [...base.transcript, ev] };
+        return { ...base, transcript: mergeTranscript(base.transcript, [ev]) };
       });
     });
     return () => { stale = true; es.close(); };
@@ -70,11 +80,11 @@ export default function WorkflowView({ items }) {
             {state.error && <span className="wf-error">{state.error}</span>}
           </div>
           <div className="wf-transcript">
-            {transcript.map((ev, i) => {
-              if (ev.kind === 'assistant-text') return <div key={i} className="msg assistant"><Markdown>{ev.text}</Markdown></div>;
-              if (ev.kind === 'user-text') return <div key={i} className="msg user">{ev.text}</div>;
-              if (ev.kind === 'tool-use') return <div key={i} className="msg tool"><code>{ev.name}</code> {ev.summary}</div>;
-              if (ev.kind === 'session-start') return <div key={i} className="msg meta">session started ({ev.model})</div>;
+            {transcript.map((ev) => {
+              if (ev.kind === 'assistant-text') return <div key={ev.seq} className="msg assistant"><Markdown>{ev.text}</Markdown></div>;
+              if (ev.kind === 'user-text') return <div key={ev.seq} className="msg user">{ev.text}</div>;
+              if (ev.kind === 'tool-use') return <div key={ev.seq} className="msg tool"><code>{ev.name}</code> {ev.summary}</div>;
+              if (ev.kind === 'session-start') return <div key={ev.seq} className="msg meta">session started ({ev.model})</div>;
               return null;
             })}
             {state.stepStatus === 'done' && <div className="msg meta">brainstorm complete — spec saved to specs/{state.itemId}.md</div>}

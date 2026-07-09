@@ -71,8 +71,25 @@ test('input echoes user-text to transcript/broadcast and forwards to the session
   wf.start('feat-a');
   assert.strictEqual(wf.input('my answer'), true);
   assert.deepStrictEqual(sessions[0].sent, ['my answer']);
-  assert.deepStrictEqual(wf.getTranscript().at(-1), { kind: 'user-text', text: 'my answer' });
+  assert.deepStrictEqual(wf.getTranscript().at(-1), { seq: 0, kind: 'user-text', text: 'my answer' });
   assert.ok(broadcasts.some((e) => e.kind === 'user-text'));
+});
+
+test('transcript events carry increasing seq that resets on a new start()', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  wf.input('one');
+  wf.input('two');
+  const seqs = wf.getTranscript().map((e) => e.seq);
+  assert.deepStrictEqual(seqs, [0, 1]);
+
+  fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'specs', 'feat-a.md'), '# spec');
+  sessions[0].args.onEvent({ kind: 'turn-end', ok: true, costUsd: 0 });
+
+  wf.start('feat-a'); // new run on the same workflow instance resets seq
+  wf.input('fresh');
+  assert.deepStrictEqual(wf.getTranscript().map((e) => e.seq), [0]);
 });
 
 test('input is refused with no running workflow', () => {
