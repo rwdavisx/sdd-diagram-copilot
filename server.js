@@ -63,6 +63,70 @@ function loadProject(yamlPath) {
   return { project: doc.project || path.basename(path.dirname(yamlPath)), items, errors };
 }
 
+// Priority order for non-shipped items: ready items (all depends shipped)
+// first, ranked by how much downstream work they unblock, then blocked items
+// in dependency order. Cycles are flagged, not fatal.
+function computePriority(items) {
+  const valid = items.filter((i) => i && typeof i === 'object' && i.id);
+  const pendingIds = new Set(valid.filter((i) => i.status !== 'shipped').map((i) => i.id));
+  const pending = valid.filter((i) => pendingIds.has(i.id));
+
+  // Deps that block: exist and aren't shipped (dangling ids are reported by loadProject).
+  const blockers = (item) =>
+    (Array.isArray(item.depends) ? item.depends : []).filter((d) => pendingIds.has(d));
+
+  // Transitive pending dependents: finishing this item helps that many others.
+  const dependents = new Map();
+  for (const item of pending) {
+    const seen = new Set();
+    const stack = [item.id];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const other of pending) {
+        if (!seen.has(other.id) && blockers(other).includes(cur)) {
+          seen.add(other.id);
+          stack.push(other.id);
+        }
+      }
+    }
+    dependents.set(item.id, seen.size);
+  }
+
+  const byRank = (a, b) =>
+    dependents.get(b.id) - dependents.get(a.id) || a.id.localeCompare(b.id);
+
+  // Ready items first, then Kahn's algorithm over the blocked ones.
+  // ponytail: O(n^2) frontier rescan; fine for hand-edited project files.
+  const ready = pending.filter((i) => blockers(i).length === 0).sort(byRank);
+  const done = new Set(ready.map((i) => i.id));
+  const ordered = [...ready];
+  while (ordered.length < pending.length) {
+    const frontier = pending
+      .filter((i) => !done.has(i.id) && blockers(i).every((d) => done.has(d)))
+      .sort(byRank);
+    if (frontier.length === 0) break; // the rest are in a cycle
+    done.add(frontier[0].id);
+    ordered.push(frontier[0]);
+  }
+  const inCycle = pending
+    .filter((i) => !done.has(i.id))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const toEntry = (i, cycle) => ({
+    id: i.id, name: i.name, type: i.type, status: i.status, spec: i.spec || null,
+    ready: blockers(i).length === 0,
+    blockedBy: blockers(i),
+    dependents: dependents.get(i.id),
+    ...(cycle ? { cycle: true } : {}),
+  });
+  return {
+    items: [...ordered.map((i) => toEntry(i, false)), ...inCycle.map((i) => toEntry(i, true))],
+    warnings: inCycle.length
+      ? [`Dependency cycle involving: ${inCycle.map((i) => i.id).join(', ')}`]
+      : [],
+  };
+}
+
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
@@ -156,4 +220,5 @@ function main() {
   });
 }
 
-main();
+if (require.main === module) main();
+module.exports = { loadProject, computePriority };
