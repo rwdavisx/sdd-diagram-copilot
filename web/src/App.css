@@ -58,15 +58,26 @@ main { flex: 1; display: flex; min-height: 0; }
 .diagram-legend .lg-api { border-top-style: dashed; }
 .diagram-legend .lg-data { border-top-style: dotted; }
 
-/* wireframe screen nodes */
-.wf-node { width: auto; min-height: 0; padding: 0; overflow: hidden; }
-.wf-node-header {
-  display: flex; align-items: center; gap: 6px;
-  height: 34px; padding: 0 8px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap; overflow: hidden;
+/* screen nodes: uniform card + wireframe thumbnail; full view in detail panel */
+.screen-node { position: relative; }
+.wf-thumb {
+  position: relative; overflow: hidden; background: #fff;
+  border: 1px solid var(--border); border-radius: 6px;
+  margin-top: 2px;
 }
-.wf-node-frame { overflow: hidden; background: #fff; }
+.wf-thumb-hint {
+  position: absolute; inset: auto 0 0 0;
+  padding: 3px 6px; font-size: 9px; text-align: center;
+  color: var(--muted); background: rgba(255, 255, 255, 0.85);
+  opacity: 0; transition: opacity 120ms ease;
+}
+.screen-node:hover .wf-thumb-hint { opacity: 1; }
+
+/* full wireframe in the detail panel */
+.wf-viewer {
+  overflow: hidden;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff;
+}
 
 /* ---------- board ---------- */
 .column {

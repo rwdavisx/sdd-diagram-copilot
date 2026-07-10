@@ -86,9 +86,11 @@ the item's node. Conventions:
   <form id="order-form" data-flow-to="orders-api" data-flow-kind="api">…</form>
   ```
 
-  The server parses these attributes to draw element-anchored connectors on
-  the architecture diagram — there is no separate flows registry to maintain.
-  `data-flow-to` referencing a nonexistent item id is surfaced as an error.
+  The server parses these attributes to draw connectors on the architecture
+  diagram (parallel flows between the same two items are bundled into one
+  labeled edge) — there is no separate flows registry to maintain. An optional
+  `data-flow-label="…"` names the edge. `data-flow-to` referencing a
+  nonexistent item id is surfaced as an error.
 
 ## Finding work
 

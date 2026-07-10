@@ -12,7 +12,7 @@ import DiagramView from './DiagramView.jsx';
 
 const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning' };
 
-export default function PlanningView({ items, flows, rev, selectedId, onSelect }) {
+export default function PlanningView({ items, flows, selectedId, onSelect }) {
   const wf = useWorkflowFeed();
   const [startError, setStartError] = useState(null);
   const [iterateOn, setIterateOn] = useState(null); // item id the chat is focused on
@@ -96,7 +96,7 @@ export default function PlanningView({ items, flows, rev, selectedId, onSelect }
       </div>
       <div className="pane-resizer" onPointerDown={onResizeDown} />
       <div className="planning-canvas">
-        <DiagramView items={items} flows={flows} rev={rev} selectedId={selectedId} onSelect={onSelect} />
+        <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} />
       </div>
     </div>
   );

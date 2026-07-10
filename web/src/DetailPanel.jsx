@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Button } from '@astryxdesign/core/Button';
 import { Divider } from '@astryxdesign/core/Divider';
@@ -7,6 +7,42 @@ import { Markdown } from '@astryxdesign/core/Markdown';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import { TypeBadge, STATUS_VARIANT } from './chips.jsx';
+
+const WF_W = 800; // wireframes are authored at 800px
+
+// The full wireframe, scaled to the panel's width at its complete height —
+// the diagram only shows a thumbnail, this is where you actually read it.
+function WireframeViewer({ item, panelWidth }) {
+  const ref = useRef(null);
+  const [contentH, setContentH] = useState(600);
+  const scale = Math.max(0.2, (panelWidth - 34) / WF_W);
+
+  const measure = () => {
+    const doc = ref.current?.contentDocument;
+    if (!doc) return;
+    // body height alone under-reports when content overflows — the cause of
+    // wireframes rendering chopped off in the old in-node approach.
+    setContentH(Math.max(
+      doc.body?.scrollHeight || 0,
+      doc.documentElement?.scrollHeight || 0,
+      Math.ceil(doc.body?.getBoundingClientRect().height || 0),
+    ) + 16);
+  };
+
+  return (
+    <div className="wf-viewer" style={{ height: contentH * scale }}>
+      <iframe
+        key={item.wfrev}
+        ref={ref}
+        src={'/' + item.wireframe}
+        sandbox="allow-same-origin"
+        title={item.name}
+        onLoad={measure}
+        style={{ width: WF_W, height: contentH, transform: `scale(${scale})`, transformOrigin: 'top left', border: 0, pointerEvents: 'none' }}
+      />
+    </div>
+  );
+}
 
 export default function DetailPanel({ item, items, width, onSelect, onClose, onStartWorkflow }) {
   const [spec, setSpec] = useState(null); // { text } | { error } | null while loading
@@ -47,6 +83,13 @@ export default function DetailPanel({ item, items, width, onSelect, onClose, onS
         )}
 
         {item.notes && <Text type="supporting" as="p">{item.notes}</Text>}
+
+        {item.wireframe && (
+          <VStack gap={1}>
+            <Text type="label">Wireframe</Text>
+            <WireframeViewer item={item} panelWidth={width || 380} />
+          </VStack>
+        )}
 
         {(item.depends || []).length > 0 && (
           <VStack gap={1}>

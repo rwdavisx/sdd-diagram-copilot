@@ -45,9 +45,12 @@ items:
     depends: [living-blueprint]
     notes: >-
       Schemas tab browsing item contracts (contracts: in project.yaml),
-      item-level flows: with labeled/animated edges, ChatLayout stream
-      scroll (fixes scroll-jump in plan chat), draggable pane dividers,
-      right-edge anchor clamping + smoothstep edges + legend + auto refit.
+      item-level flows: with labeled edges, ChatLayout stream scroll
+      (fixes scroll-jump in plan chat), draggable pane dividers.
+      Diagram rework: uniform screen cards with wireframe thumbnails
+      (full wireframe in detail panel), parallel flows bundled into one
+      labeled edge per pair+kind, smoothstep routing, no CSS edge
+      animation (perf), per-file wfrev so only changed wireframes reload.
 
   - id: workflow-execute-viz
     name: Execute/TDD/review visualization

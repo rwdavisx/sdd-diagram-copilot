@@ -113,6 +113,10 @@ function loadProject(yamlPath) {
       const conv = `design/wireframes/${item.id}.html`;
       item.wireframe = fs.existsSync(path.join(dir, 'design', 'wireframes', `${item.id}.html`)) ? conv : null;
     }
+    // Per-file revision so the viewer only reloads iframes whose file changed.
+    if (item.wireframe) {
+      try { item.wfrev = Math.round(fs.statSync(path.resolve(dir, item.wireframe)).mtimeMs); } catch { item.wfrev = 0; }
+    }
   }
   const wfDir = path.join(dir, 'design', 'wireframes');
   if (fs.existsSync(wfDir)) {

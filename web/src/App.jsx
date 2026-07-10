@@ -22,13 +22,12 @@ export default function App() {
   const [view, setView] = useState('diagram');
   const [selectedId, setSelectedId] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const [rev, setRev] = useState(0); // bumped per reload so wireframe iframes refresh
   const [detailW, onDetailResize] = usePaneWidth('dc-detail-w', 380, { min: 300, max: 720, fromRight: true });
 
   const refetch = useCallback(() => {
     fetch('/api/project')
       .then((r) => r.json())
-      .then((d) => { setData(d); setRev((n) => n + 1); setLoadError(null); })
+      .then((d) => { setData(d); setLoadError(null); })
       .catch((e) => setLoadError(String(e)));
   }, []);
 
@@ -87,8 +86,8 @@ export default function App() {
       )}
 
       <main>
-        {view === 'diagram' && <DiagramView items={items} flows={data.flows || []} rev={rev} selectedId={selectedId} onSelect={setSelectedId} />}
-        {view === 'planning' && <PlanningView items={items} flows={data.flows || []} rev={rev} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'diagram' && <DiagramView items={items} flows={data.flows || []} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'planning' && <PlanningView items={items} flows={data.flows || []} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'schemas' && <SchemaView items={items} onSelect={setSelectedId} />}
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
