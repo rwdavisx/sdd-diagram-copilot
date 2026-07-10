@@ -8,6 +8,7 @@ import DiagramView from './DiagramView.jsx';
 import BoardView from './BoardView.jsx';
 import PriorityView from './PriorityView.jsx';
 import WorkflowView from './WorkflowView.jsx';
+import PlanningView from './PlanningView.jsx';
 import DetailPanel from './DetailPanel.jsx';
 import './App.css';
 
@@ -18,11 +19,12 @@ export default function App() {
   const [view, setView] = useState('diagram');
   const [selectedId, setSelectedId] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [rev, setRev] = useState(0); // bumped per reload so wireframe iframes refresh
 
   const refetch = useCallback(() => {
     fetch('/api/project')
       .then((r) => r.json())
-      .then((d) => { setData(d); setLoadError(null); })
+      .then((d) => { setData(d); setRev((n) => n + 1); setLoadError(null); })
       .catch((e) => setLoadError(String(e)));
   }, []);
 
@@ -64,6 +66,7 @@ export default function App() {
         </HStack>
         <TabList value={view} onChange={setView} size="sm">
           <Tab value="diagram" label="Diagram" />
+          <Tab value="planning" label="Planning" />
           <Tab value="board" label="Board" />
           <Tab value="priority" label="Priority" />
           <Tab value="workflow" label="Workflow" />
@@ -81,7 +84,8 @@ export default function App() {
       )}
 
       <main>
-        {view === 'diagram' && <DiagramView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'diagram' && <DiagramView items={items} flows={data.flows || []} rev={rev} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'planning' && <PlanningView items={items} flows={data.flows || []} rev={rev} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
         {view === 'workflow' && <WorkflowView items={items} />}

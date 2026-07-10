@@ -91,7 +91,70 @@ function loadProject(yamlPath) {
       if (!ids.has(dep)) errors.push(`Item "${item.id}" depends on unknown id "${dep}"`);
     }
   }
+  // Wireframes: declared via `wireframe:` or by convention at
+  // design/wireframes/<id>.html. Resolved to the path if present, else null.
+  const dir = path.dirname(yamlPath);
+  const declared = new Set();
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || !item.id) continue;
+    if (item.wireframe) {
+      declared.add(path.posix.normalize(String(item.wireframe).replace(/\\/g, '/')));
+      if (!fs.existsSync(path.resolve(dir, item.wireframe))) {
+        errors.push(`Item "${item.id}" declares wireframe "${item.wireframe}" but the file does not exist`);
+        item.wireframe = null;
+      }
+    } else {
+      const conv = `design/wireframes/${item.id}.html`;
+      item.wireframe = fs.existsSync(path.join(dir, 'design', 'wireframes', `${item.id}.html`)) ? conv : null;
+    }
+  }
+  const wfDir = path.join(dir, 'design', 'wireframes');
+  if (fs.existsSync(wfDir)) {
+    for (const f of fs.readdirSync(wfDir)) {
+      if (!f.endsWith('.html')) continue;
+      if (!ids.has(f.slice(0, -5)) && !declared.has(`design/wireframes/${f}`)) {
+        errors.push(`Wireframe design/wireframes/${f} has no matching item`);
+      }
+    }
+  }
   return { project: doc.project || path.basename(path.dirname(yamlPath)), items, errors };
+}
+
+// Element-anchored flows are declared inside the wireframe HTML itself:
+// data-flow-to="<item-id>" (target), data-flow-kind="nav|api|data" (default
+// nav), and the element's id= as the edge anchor (null → node default handle).
+function parseWireframeFlows(html) {
+  const flows = [];
+  const tagRe = /<[a-z][a-z0-9-]*(?:\s[^<>]*)?\bdata-flow-to="([^"]+)"[^<>]*>/gi;
+  let m;
+  while ((m = tagRe.exec(html))) {
+    const tag = m[0];
+    const kind = (/\bdata-flow-kind="(nav|api|data)"/i.exec(tag) || [])[1] || 'nav';
+    const anchor = (/\bid="([^"]+)"/i.exec(tag) || [])[1] || null;
+    flows.push({ anchor, to: m[1], kind: kind.toLowerCase() });
+  }
+  return flows;
+}
+
+// Parse every item's wireframe for flows; flows to unknown ids are dropped
+// with an error so the diagram never renders a dangling edge.
+function loadWireframes(dir, items) {
+  const flows = [];
+  const errors = [];
+  const ids = new Set(items.filter((i) => i && i.id).map((i) => i.id));
+  for (const item of items) {
+    if (!item || !item.id || !item.wireframe) continue;
+    let html;
+    try { html = fs.readFileSync(path.resolve(dir, item.wireframe), 'utf8'); } catch { continue; }
+    for (const f of parseWireframeFlows(html)) {
+      if (!ids.has(f.to)) {
+        errors.push(`Wireframe ${item.wireframe}: data-flow-to unknown id "${f.to}"`);
+        continue;
+      }
+      if (f.to !== item.id) flows.push({ from: item.id, ...f });
+    }
+  }
+  return { flows, errors };
 }
 
 // Priority order for non-shipped items: ready items (all depends shipped)
@@ -235,14 +298,28 @@ function main() {
   // Watch the yaml's directory (watching the file directly breaks on
   // editors/agents that replace the file) and notify viewers, debounced.
   let debounce = null;
+  const reloadDebounced = () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      for (const client of sseClients) client.write('event: reload\ndata: {}\n\n');
+    }, 200);
+  };
+  // Wireframe edits should live-reload too; design/ may not exist yet, so
+  // retry attaching whenever the project dir changes.
+  let designWatcher = null;
+  const watchDesign = () => {
+    if (designWatcher) return;
+    try {
+      designWatcher = fs.watch(path.join(projectDir, 'design'), { recursive: true }, reloadDebounced);
+    } catch { /* not created yet */ }
+  };
   try {
     fs.watch(projectDir, (event, filename) => {
+      watchDesign();
       if (filename && filename !== path.basename(args.yamlPath)) return;
-      clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        for (const client of sseClients) client.write('event: reload\ndata: {}\n\n');
-      }, 200);
+      reloadDebounced();
     });
+    watchDesign();
   } catch (e) {
     console.error(`Warning: file watching unavailable (${e.message}); live reload disabled`);
   }
@@ -251,7 +328,9 @@ function main() {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
     if (url.pathname === '/api/project') {
-      return sendJson(res, 200, loadProject(args.yamlPath));
+      const proj = loadProject(args.yamlPath);
+      const wf = loadWireframes(projectDir, proj.items);
+      return sendJson(res, 200, { ...proj, errors: [...proj.errors, ...wf.errors], flows: wf.flows });
     }
 
     if (url.pathname === '/api/priority') {
@@ -324,6 +403,20 @@ function main() {
       return;
     }
 
+    // Wireframe HTML, served same-origin so the viewer can render it in an
+    // iframe and measure anchor elements inside it.
+    if (url.pathname.startsWith('/design/wireframes/')) {
+      const resolved = path.resolve(projectDir, '.' + path.posix.normalize(url.pathname));
+      if (!resolved.startsWith(projectDir + path.sep)) {
+        return sendJson(res, 403, { error: 'Wireframe path escapes the project directory' });
+      }
+      return fs.readFile(resolved, (err, data) => {
+        if (err) return sendJson(res, 404, { error: `Wireframe not found: ${url.pathname}` });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(data);
+      });
+    }
+
     // Static files from web/dist, with SPA fallback to index.html.
     let filePath = path.resolve(distDir, '.' + path.posix.normalize(url.pathname));
     if (!filePath.startsWith(distDir)) filePath = path.join(distDir, 'index.html');
@@ -353,4 +446,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { loadProject, computePriority, updateProjectItem };
+module.exports = { loadProject, computePriority, updateProjectItem, parseWireframeFlows, loadWireframes };

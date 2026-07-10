@@ -47,7 +47,14 @@ function planProjectPrompt() {
   return `You are planning this project. Its project.yaml (see AGENTS.md for the schema) is the master plan: every screen, feature, API, and integration should become an item.
 Use the superpowers:brainstorming skill mindset: interview me about what I want to build, one question at a time — I am answering from a chat UI, so keep each question self-contained.
 As decisions land, add or update items in project.yaml immediately (id: kebab-case, name, type: frontend|backend|integration, status: planned, depends, notes). Keep depends accurate — it drives the architecture diagram I am watching live.
-Continue until I say we're done; then make sure project.yaml reflects the complete plan and commit it.`;
+
+Wireframes: for every frontend item, also create/update a wireframe at design/wireframes/<item-id>.html as soon as the screen's purpose is clear, and keep it in sync as decisions change. Rules:
+- One self-contained file: inline CSS only, no <script>, no external assets, body designed at 800px wide.
+- Every interactive element that leads somewhere gets a unique id and data-flow-to="<item-id>" plus data-flow-kind: "nav" (navigates to another screen), "api" (triggers a backend item), or "data" (displays data from a backend/integration item). Example: <button id="checkout-btn" data-flow-to="checkout" data-flow-kind="nav">Check out</button>
+- These attributes draw the element-anchored connectors on the live diagram, so add them as you go, not at the end.
+My messages may start with a [Context: iterating on screen "<id>" — wireframe at <path>] prefix; that means apply the message to that wireframe file directly.
+
+Continue until I say we're done; then make sure project.yaml and the wireframes reflect the complete plan and commit them.`;
 }
 
 // Each step: prompt, whether it runs in the worktree, and an artifact check

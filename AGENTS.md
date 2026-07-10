@@ -18,6 +18,7 @@ items:
     spec: docs/specs/login.md   # optional; path relative to this yaml file
     depends: [auth-api]    # optional; ids of items this item calls/uses
     notes: freeform text   # optional
+    wireframe: design/wireframes/login-page.html  # optional; defaults to this convention path when the file exists
 ```
 
 The server validates on every load: unknown `type`/`status`, duplicate `id`s,
@@ -48,6 +49,32 @@ Keep the file valid.
    delete its entry in the same change that removes the code.
 6. **Don't edit the viewer's code to change project state.** State lives only
    in `project.yaml`.
+
+## Wireframes
+
+Frontend items can have an HTML wireframe that the diagram renders live inside
+the item's node. Conventions:
+
+- **Path:** `design/wireframes/<item-id>.html` (auto-detected; an explicit
+  `wireframe:` field overrides). A wireframe file with no matching item is an
+  error.
+- **Self-contained:** one file, inline CSS only, no `<script>`, no external
+  assets. Design the body at 800px wide.
+- **Flows live in the HTML:** every interactive element that leads somewhere
+  gets a unique `id` plus `data-flow-to="<item-id>"` and
+  `data-flow-kind="nav|api|data"`:
+  - `nav` — the user navigates to another screen
+  - `api` — the element triggers a backend item
+  - `data` — the element displays data from a backend/integration item
+
+  ```html
+  <button id="checkout-btn" data-flow-to="checkout" data-flow-kind="nav">Check out</button>
+  <form id="order-form" data-flow-to="orders-api" data-flow-kind="api">…</form>
+  ```
+
+  The server parses these attributes to draw element-anchored connectors on
+  the architecture diagram — there is no separate flows registry to maintain.
+  `data-flow-to` referencing a nonexistent item id is surfaced as an error.
 
 ## Finding work
 

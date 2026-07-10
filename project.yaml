@@ -30,6 +30,14 @@ items:
     status: shipped
     notes: diagram-copilot init scaffolds project.yaml/AGENTS.md/.gitignore in any repo and starts serving; bin entry + default ./project.yaml.
 
+  - id: living-blueprint
+    name: Planning tab + wireframe blueprint
+    type: frontend
+    status: shipped
+    spec: docs/superpowers/specs/2026-07-10-living-blueprint-design.md
+    depends: [plan-project-mode]
+    notes: Planning tab (plan-project chat + live canvas), wireframe HTML rendered in diagram nodes, element-anchored nav/api/data flow edges parsed from data-flow-to attributes.
+
   - id: workflow-execute-viz
     name: Execute/TDD/review visualization
     type: frontend

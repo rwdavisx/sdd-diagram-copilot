@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Execute/TDD/review visualization</title>
+<style>
+  body { margin: 0; width: 800px; font-family: system-ui, sans-serif; background: #f7f8fa; color: #1f2430; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: #fff; border-bottom: 1px solid #e3e6eb; }
+  header h1 { font-size: 16px; margin: 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px; }
+  .card { background: #fff; border: 1px solid #e3e6eb; border-radius: 8px; padding: 14px; }
+  .card h2 { font-size: 13px; margin: 0 0 10px; color: #5b6472; text-transform: uppercase; letter-spacing: 0.04em; }
+  .task { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .green { background: #2fa864; } .red { background: #d94f4f; } .grey { background: #c3c9d2; }
+  .timeline { display: flex; gap: 3px; margin-top: 8px; }
+  .tick { width: 14px; height: 26px; border-radius: 3px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #cdd3dc; background: #fff; cursor: pointer; }
+  .primary { background: #2d5bd7; color: #fff; border-color: #2d5bd7; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Execute — checkout-flow</h1>
+    <button id="live-transcript-btn" data-flow-to="workflow-session-runner" data-flow-kind="data">Live transcript</button>
+    <button id="retry-step-btn" class="primary" data-flow-to="workflow-orchestration" data-flow-kind="api">Retry step</button>
+  </header>
+  <div class="grid">
+    <div class="card">
+      <h2>Task grid</h2>
+      <div class="task"><span class="dot green"></span> write failing test for cart totals</div>
+      <div class="task"><span class="dot green"></span> implement totals calculation</div>
+      <div class="task"><span class="dot red"></span> wire totals into checkout view</div>
+      <div class="task"><span class="dot grey"></span> review + commit</div>
+    </div>
+    <div class="card">
+      <h2>Red / green TDD timeline</h2>
+      <div class="timeline">
+        <div class="tick red"></div><div class="tick red"></div><div class="tick green"></div>
+        <div class="tick red"></div><div class="tick green"></div><div class="tick green"></div>
+        <div class="tick grey"></div><div class="tick grey"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
