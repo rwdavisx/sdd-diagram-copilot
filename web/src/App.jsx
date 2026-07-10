@@ -9,6 +9,7 @@ import BoardView from './BoardView.jsx';
 import PriorityView from './PriorityView.jsx';
 import WorkflowView from './WorkflowView.jsx';
 import PlanningView from './PlanningView.jsx';
+import { onServerEvent } from './useWorkflowFeed.jsx';
 import DetailPanel from './DetailPanel.jsx';
 import './App.css';
 
@@ -38,9 +39,7 @@ export default function App() {
 
   useEffect(() => {
     refetch();
-    const es = new EventSource('/api/events');
-    es.addEventListener('reload', refetch);
-    return () => es.close();
+    return onServerEvent('reload', refetch);
   }, [refetch]);
 
   if (loadError) return <div className="fatal">Cannot reach server: {loadError}</div>;

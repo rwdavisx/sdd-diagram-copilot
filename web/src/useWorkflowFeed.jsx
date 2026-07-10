@@ -9,6 +9,17 @@ import { Markdown } from '@astryxdesign/core/Markdown';
 export const post = (url, body) =>
   fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
+// One EventSource for the whole page. Browsers cap HTTP/1.1 at ~6 connections
+// per host; an EventSource per component (times several open tabs) exhausts
+// the pool and silently starves every later fetch. Lives for the page's
+// lifetime; subscribers just detach their listener.
+let es = null;
+export function onServerEvent(event, handler) {
+  if (!es) es = new EventSource('/api/events');
+  es.addEventListener(event, handler);
+  return () => es.removeEventListener(event, handler);
+}
+
 export const mergeTranscript = (a, b) => {
   const bySeq = new Map([...a, ...b].map((ev) => [ev.seq, ev]));
   return [...bySeq.values()].sort((x, y) => x.seq - y.seq);
@@ -40,8 +51,7 @@ export function useWorkflowFeed() {
           : d);
       })
       .catch(() => { if (!stale) setWf({ state: null, transcript: [] }); });
-    const es = new EventSource('/api/events');
-    es.addEventListener('workflow', (e) => {
+    const off = onServerEvent('workflow', (e) => {
       const ev = JSON.parse(e.data);
       setWf((cur) => {
         const base = cur || { state: null, transcript: [] };
@@ -52,7 +62,7 @@ export function useWorkflowFeed() {
         return { ...base, transcript: mergeTranscript(base.transcript, [ev]) };
       });
     });
-    return () => { stale = true; es.close(); };
+    return () => { stale = true; off(); };
   }, []);
 
   return wf;
