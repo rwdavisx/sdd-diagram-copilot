@@ -1,3 +1,9 @@
+import { Badge } from '@astryxdesign/core/Badge';
+import { Text } from '@astryxdesign/core/Text';
+import { HStack } from '@astryxdesign/core/HStack';
+import { EmptyState } from '@astryxdesign/core/EmptyState';
+import { TypeBadge, SpecFlag } from './chips.jsx';
+
 const COLUMNS = [
   { status: 'planned', title: 'Planned' },
   { status: 'in-progress', title: 'In progress' },
@@ -11,7 +17,10 @@ export default function BoardView({ items, selectedId, onSelect }) {
         const cards = items.filter((i) => i.status === status);
         return (
           <div key={status} className={`column column-${status}`}>
-            <h2>{title} <span className="column-count">{cards.length}</span></h2>
+            <HStack gap={2} vAlign="center" as="h2">
+              <Text type="label">{title}</Text>
+              <Badge label={cards.length} />
+            </HStack>
             {cards.map((item) => (
               <button
                 key={item.id}
@@ -19,14 +28,13 @@ export default function BoardView({ items, selectedId, onSelect }) {
                 onClick={() => onSelect(item.id)}
               >
                 <div className="card-name">{item.name}</div>
-                <div className="card-meta">
-                  <span className={`badge type-${item.type}`}>{item.type}</span>
-                  {item.spec ? <span className="spec-flag">spec</span>
-                    : <span className="spec-flag missing">no spec</span>}
-                </div>
+                <HStack gap={2} vAlign="center">
+                  <TypeBadge type={item.type} />
+                  <SpecFlag spec={item.spec} />
+                </HStack>
               </button>
             ))}
-            {cards.length === 0 && <div className="column-empty">nothing here</div>}
+            {cards.length === 0 && <EmptyState isCompact title="Nothing here" />}
           </div>
         );
       })}

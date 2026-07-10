@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { TabList, Tab } from '@astryxdesign/core/TabList';
+import { Text } from '@astryxdesign/core/Text';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Banner } from '@astryxdesign/core/Banner';
+import { StatusChip } from './chips.jsx';
 import DiagramView from './DiagramView.jsx';
 import BoardView from './BoardView.jsx';
 import PriorityView from './PriorityView.jsx';
@@ -46,25 +51,33 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>{data.project || 'Untitled project'}</h1>
-        <div className="counts">
-          {counts.map(([s, n]) => (
-            <span key={s} className={`count status-${s}`}>{n} {s}</span>
-          ))}
-        </div>
-        <div className="toggle">
-          <button className={view === 'diagram' ? 'active' : ''} onClick={() => setView('diagram')}>Diagram</button>
-          <button className={view === 'board' ? 'active' : ''} onClick={() => setView('board')}>Board</button>
-          <button className={view === 'priority' ? 'active' : ''} onClick={() => setView('priority')}>Priority</button>
-          <button className={view === 'workflow' ? 'active' : ''} onClick={() => setView('workflow')}>Workflow</button>
-        </div>
+        <HStack gap={4} vAlign="center" padding={2}>
+          <Text type="large" weight="bold">{data.project || 'Untitled project'}</Text>
+          <HStack gap={3} vAlign="center">
+            {counts.map(([s, n]) => (
+              <HStack key={s} gap={1} vAlign="center">
+                <StatusChip status={s} />
+                <Text type="supporting" size="xsm">{n}</Text>
+              </HStack>
+            ))}
+          </HStack>
+        </HStack>
+        <TabList value={view} onChange={setView} size="sm">
+          <Tab value="diagram" label="Diagram" />
+          <Tab value="board" label="Board" />
+          <Tab value="priority" label="Priority" />
+          <Tab value="workflow" label="Workflow" />
+        </TabList>
       </header>
 
       {data.errors.length > 0 && (
-        <div className="errors">
-          <strong>project.yaml has {data.errors.length} problem{data.errors.length > 1 ? 's' : ''}:</strong>
+        <Banner
+          status="error"
+          title={`project.yaml has ${data.errors.length} problem${data.errors.length > 1 ? 's' : ''}`}
+          defaultIsExpanded
+        >
           <ul>{data.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-        </div>
+        </Banner>
       )}
 
       <main>

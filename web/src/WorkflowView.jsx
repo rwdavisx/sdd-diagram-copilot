@@ -1,5 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
+import { Badge } from '@astryxdesign/core/Badge';
+import { Button } from '@astryxdesign/core/Button';
+import {
+  ChatComposer,
+  ChatMessage,
+  ChatMessageBubble,
+  ChatMessageList,
+  ChatSystemMessage,
+} from '@astryxdesign/core/Chat';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Markdown } from '@astryxdesign/core/Markdown';
+import { Selector } from '@astryxdesign/core/Selector';
+import { Text } from '@astryxdesign/core/Text';
+import { VStack } from '@astryxdesign/core/VStack';
 
 const post = (url, body) =>
   fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -46,20 +59,28 @@ function Stepper({ state }) {
 
 function StartPicker({ items, pickedId, setPickedId, prompt }) {
   return (
-    <div className="wf-empty">
-      <p>{prompt}</p>
-      <select value={pickedId} onChange={(e) => setPickedId(e.target.value)}>
-        <option value="">— choose an item —</option>
-        {items.map((i) => (
-          <option key={i.id} value={i.id}>
-            {i.name} ({i.status}{i.spec ? ', has spec' : ', needs spec'})
-          </option>
-        ))}
-      </select>
-      <button disabled={!pickedId} onClick={() => post('/api/workflow/start', { itemId: pickedId })}>
-        Start workflow
-      </button>
-    </div>
+    <HStack gap={2} vAlign="end" wrap="wrap">
+      <Text type="body" as="p">{prompt}</Text>
+      <Selector
+        label="Item"
+        isLabelHidden
+        placeholder="Choose an item..."
+        size="sm"
+        value={pickedId}
+        onChange={setPickedId}
+        options={items.map((i) => ({
+          value: i.id,
+          label: `${i.name} (${i.status}${i.spec ? ', has spec' : ', needs spec'})`,
+        }))}
+      />
+      <Button
+        label="Start workflow"
+        variant="primary"
+        size="sm"
+        isDisabled={!pickedId}
+        onClick={() => post('/api/workflow/start', { itemId: pickedId })}
+      />
+    </HStack>
   );
 }
 
@@ -69,10 +90,36 @@ const STATUS_HINTS = {
   'needs-attention': 'The session ended without producing the expected artifact. Start again to retry.',
   interrupted: 'The server restarted while this step was running. Start the workflow again to retry.',
 };
+const STATUS_BADGE = { running: 'info', done: 'success', 'needs-attention': 'warning', interrupted: 'warning' };
+
+function TranscriptEvent({ ev }) {
+  if (ev.kind === 'assistant-text') {
+    return (
+      <ChatMessage sender="assistant">
+        <ChatMessageBubble variant="ghost">
+          <Markdown density="compact" headingLevelStart={3}>{ev.text}</Markdown>
+        </ChatMessageBubble>
+      </ChatMessage>
+    );
+  }
+  if (ev.kind === 'user-text') {
+    return (
+      <ChatMessage sender="user">
+        <ChatMessageBubble>{ev.text}</ChatMessageBubble>
+      </ChatMessage>
+    );
+  }
+  if (ev.kind === 'tool-use') {
+    return <ChatSystemMessage>{ev.name}{ev.summary ? ` · ${ev.summary}` : ''}</ChatSystemMessage>;
+  }
+  if (ev.kind === 'session-start') {
+    return <ChatSystemMessage variant="divider">session started ({ev.model})</ChatSystemMessage>;
+  }
+  return null;
+}
 
 export default function WorkflowView({ items }) {
   const [wf, setWf] = useState(null); // { state, transcript }
-  const [text, setText] = useState('');
   const [pickedId, setPickedId] = useState('');
   const endRef = useRef(null);
 
@@ -110,17 +157,16 @@ export default function WorkflowView({ items }) {
   const item = state && items.find((i) => i.id === state.itemId);
   const startable = items.filter((i) => i.status !== 'shipped');
 
-  const send = () => {
-    const t = text.trim();
+  const send = (value) => {
+    const t = value.trim();
     if (!t || !running) return;
     post('/api/workflow/input', { text: t });
-    setText('');
   };
 
   return (
     <div className="workflow">
       {!state && (
-        <div className="wf-intro">
+        <VStack gap={4}>
           <Stepper state={null} />
           <StartPicker
             items={startable}
@@ -128,45 +174,32 @@ export default function WorkflowView({ items }) {
             setPickedId={setPickedId}
             prompt="A workflow takes one item through the pipeline above, starting with a brainstorm chat that produces its spec. Pick an item:"
           />
-        </div>
+        </VStack>
       )}
 
       {state && (
         <>
           <Stepper state={state} />
-          <div className="wf-header">
-            <strong>{item ? item.name : state.itemId}</strong>
-            <span className={`badge wf-${state.stepStatus}`}>{state.step}: {state.stepStatus}</span>
-            <span className="wf-hint">{STATUS_HINTS[state.stepStatus]}</span>
-            {state.error && <span className="wf-error">{state.error}</span>}
-          </div>
+          <HStack gap={2} vAlign="center">
+            <Text weight="bold">{item ? item.name : state.itemId}</Text>
+            <Badge variant={STATUS_BADGE[state.stepStatus] || 'neutral'} label={`${state.step}: ${state.stepStatus}`} />
+            <Text type="supporting" size="xsm">{STATUS_HINTS[state.stepStatus]}</Text>
+            {state.error && <Text type="supporting" size="xsm" color="accent">{state.error}</Text>}
+          </HStack>
           <div className="wf-transcript">
-            {transcript.map((ev) => {
-              if (ev.kind === 'assistant-text') return <div key={ev.seq} className="msg assistant"><Markdown>{ev.text}</Markdown></div>;
-              if (ev.kind === 'user-text') return <div key={ev.seq} className="msg user">{ev.text}</div>;
-              if (ev.kind === 'tool-use') return <div key={ev.seq} className="msg tool"><code>{ev.name}</code> {ev.summary}</div>;
-              if (ev.kind === 'session-start') return <div key={ev.seq} className="msg meta">session started ({ev.model})</div>;
-              return null;
-            })}
-            {state.stepStatus === 'done' && (
-              <div className="msg meta">
-                brainstorm complete — spec saved to specs/{state.itemId}.md and recorded in project.yaml.
-                Next steps (worktree → plan → execute → review → finish) aren't automated yet; run them from the terminal.
-              </div>
-            )}
+            <ChatMessageList density="compact">
+              {transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
+              {state.stepStatus === 'done' && (
+                <ChatSystemMessage>
+                  brainstorm complete — spec saved to specs/{state.itemId}.md and recorded in project.yaml.
+                  Next steps (worktree → plan → execute → review → finish) aren't automated yet; run them from the terminal.
+                </ChatSystemMessage>
+              )}
+            </ChatMessageList>
             <div ref={endRef} />
           </div>
           {running ? (
-            <div className="wf-input">
-              <textarea
-                rows={2}
-                value={text}
-                placeholder="Answer Claude…"
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-              />
-              <button disabled={!text.trim()} onClick={send}>Send</button>
-            </div>
+            <ChatComposer onSubmit={send} placeholder="Answer Claude…" density="compact" />
           ) : (
             <StartPicker items={startable} pickedId={pickedId} setPickedId={setPickedId} prompt="Start another workflow:" />
           )}

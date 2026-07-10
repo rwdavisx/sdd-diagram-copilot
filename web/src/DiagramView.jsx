@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 import { ReactFlow, Background, Controls, Handle, Position, MarkerType } from '@xyflow/react';
 import dagre from 'dagre';
+import { HStack } from '@astryxdesign/core/HStack';
+import { TypeBadge, StatusChip, SpecFlag } from './chips.jsx';
 import '@xyflow/react/dist/style.css';
 
-const NODE_W = 200;
-const NODE_H = 64;
+const NODE_W = 240;
+const NODE_H = 72;
 const LANES = ['frontend', 'backend', 'integration'];
 const LANE_GAP = 60;
 
@@ -13,13 +15,11 @@ function ItemNode({ data }) {
     <div className={`flow-node status-${data.item.status} ${data.selected ? 'selected' : ''}`}>
       <Handle type="target" position={Position.Left} />
       <div className="flow-node-name">{data.item.name}</div>
-      <div className="flow-node-meta">
-        <span className={`badge type-${data.item.type}`}>{data.item.type}</span>
-        <span className={`dot status-${data.item.status}`} />
-        <span className="status-text">{data.item.status}</span>
-        {data.item.spec ? <span className="spec-flag" title={`spec: ${data.item.spec}`}>spec ✓</span>
-          : <span className="spec-flag missing" title="no spec written yet">no spec</span>}
-      </div>
+      <HStack gap={1.5} vAlign="center" wrap="nowrap">
+        <TypeBadge type={data.item.type} />
+        <StatusChip status={data.item.status} />
+        <SpecFlag spec={data.item.spec} />
+      </HStack>
       <Handle type="source" position={Position.Right} />
     </div>
   );

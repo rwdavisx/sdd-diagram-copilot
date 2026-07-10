@@ -10,11 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@astryxdesign/core": "^0.1.4",
+    "@astryxdesign/theme-neutral": "^0.1.4",
+    "@stylexjs/stylex": "^0.18.3",
     "@xyflow/react": "^12.11.2",
     "dagre": "^0.8.5",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-markdown": "^10.1.0"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

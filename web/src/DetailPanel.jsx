@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import Markdown from 'react-markdown';
+import { Badge } from '@astryxdesign/core/Badge';
+import { Button } from '@astryxdesign/core/Button';
+import { Divider } from '@astryxdesign/core/Divider';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Markdown } from '@astryxdesign/core/Markdown';
+import { Text } from '@astryxdesign/core/Text';
+import { VStack } from '@astryxdesign/core/VStack';
+import { TypeBadge, STATUS_VARIANT } from './chips.jsx';
 
 export default function DetailPanel({ item, items, onSelect, onClose, onStartWorkflow }) {
   const [spec, setSpec] = useState(null); // { text } | { error } | null while loading
@@ -22,47 +29,63 @@ export default function DetailPanel({ item, items, onSelect, onClose, onStartWor
 
   return (
     <aside className="detail">
-      <button className="detail-close" onClick={onClose}>×</button>
-      <h2>{item.name}</h2>
-      <div className="detail-meta">
-        <span className={`badge type-${item.type}`}>{item.type}</span>
-        <span className={`badge status-badge status-${item.status}`}>{item.status}</span>
-      </div>
-      {item.status !== 'shipped' && (
-        <button className="wf-start" onClick={() => onStartWorkflow(item.id)}>▶ Start workflow</button>
-      )}
-
-      {item.notes && <p className="detail-notes">{item.notes}</p>}
-
-      {(item.depends || []).length > 0 && (
-        <div className="detail-links">
-          <h3>Depends on</h3>
-          {item.depends.map((d) => {
-            const target = items.find((i) => i.id === d);
-            return target
-              ? <button key={d} className="link" onClick={() => onSelect(d)}>{target.name}</button>
-              : <span key={d} className="link broken" title="unknown id">{d}</span>;
-          })}
-        </div>
-      )}
-      {dependents.length > 0 && (
-        <div className="detail-links">
-          <h3>Used by</h3>
-          {dependents.map((i) => (
-            <button key={i.id} className="link" onClick={() => onSelect(i.id)}>{i.name}</button>
-          ))}
-        </div>
-      )}
-
-      <div className="detail-spec">
-        <h3>Spec {item.spec && <code>{item.spec}</code>}</h3>
-        {!item.spec && <p className="spec-missing">No spec yet — this item still needs planning.</p>}
-        {item.spec && spec === null && <p>Loading spec…</p>}
-        {item.spec && spec?.error && <p className="spec-missing">Could not load spec: {spec.error}</p>}
-        {item.spec && spec?.text != null && (
-          <div className="spec-body"><Markdown>{spec.text}</Markdown></div>
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center">
+          <Text type="large" weight="bold">{item.name}</Text>
+          <div style={{ marginLeft: 'auto' }}>
+            <Button label="Close" icon={<span>×</span>} isIconOnly variant="ghost" size="sm" onClick={onClose} />
+          </div>
+        </HStack>
+        <HStack gap={2} vAlign="center">
+          <TypeBadge type={item.type} />
+          <Badge variant={STATUS_VARIANT[item.status]} label={item.status} />
+        </HStack>
+        {item.status !== 'shipped' && (
+          <HStack>
+            <Button label="Start workflow" variant="primary" size="sm" onClick={() => onStartWorkflow(item.id)} />
+          </HStack>
         )}
-      </div>
+
+        {item.notes && <Text type="supporting" as="p">{item.notes}</Text>}
+
+        {(item.depends || []).length > 0 && (
+          <VStack gap={1}>
+            <Text type="label">Depends on</Text>
+            <HStack gap={1} wrap="wrap">
+              {item.depends.map((d) => {
+                const target = items.find((i) => i.id === d);
+                return target
+                  ? <Button key={d} label={target.name} variant="ghost" size="sm" onClick={() => onSelect(d)} />
+                  : <Badge key={d} variant="error" label={d} />;
+              })}
+            </HStack>
+          </VStack>
+        )}
+        {dependents.length > 0 && (
+          <VStack gap={1}>
+            <Text type="label">Used by</Text>
+            <HStack gap={1} wrap="wrap">
+              {dependents.map((i) => (
+                <Button key={i.id} label={i.name} variant="ghost" size="sm" onClick={() => onSelect(i.id)} />
+              ))}
+            </HStack>
+          </VStack>
+        )}
+
+        <Divider />
+        <VStack gap={1}>
+          <HStack gap={2} vAlign="center">
+            <Text type="label">Spec</Text>
+            {item.spec && <Text type="code">{item.spec}</Text>}
+          </HStack>
+          {!item.spec && <Text type="supporting" as="p">No spec yet — this item still needs planning.</Text>}
+          {item.spec && spec === null && <Text type="supporting" as="p">Loading spec…</Text>}
+          {item.spec && spec?.error && <Text type="supporting" as="p">Could not load spec: {spec.error}</Text>}
+          {item.spec && spec?.text != null && (
+            <div className="spec-body"><Markdown density="compact" headingLevelStart={3}>{spec.text}</Markdown></div>
+          )}
+        </VStack>
+      </VStack>
     </aside>
   );
 }
