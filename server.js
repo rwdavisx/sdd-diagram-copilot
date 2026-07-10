@@ -15,19 +15,48 @@ const TYPES = ['frontend', 'backend', 'integration'];
 const STATUSES = ['planned', 'in-progress', 'shipped'];
 
 function parseArgs(argv) {
-  const args = { port: 4400, yamlPath: null, open: true };
+  const args = { port: 4400, yamlPath: null, open: true, init: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--port') args.port = parseInt(argv[++i], 10);
+    if (a === 'init') args.init = true;
+    else if (a === '--port') args.port = parseInt(argv[++i], 10);
     else if (a === '--no-open') args.open = false;
     else if (!args.yamlPath) args.yamlPath = a;
   }
-  if (!args.yamlPath || !Number.isInteger(args.port)) {
-    console.error('Usage: node server.js <path-to-project.yaml> [--port 4400] [--no-open]');
+  // Default: the project.yaml in the current directory, so `diagram-copilot`
+  // dropped into any repo just works.
+  if (!args.yamlPath) args.yamlPath = 'project.yaml';
+  if (!Number.isInteger(args.port)) {
+    console.error('Usage: diagram-copilot [init] [path-to-project.yaml] [--port 4400] [--no-open]');
     process.exit(1);
   }
   args.yamlPath = path.resolve(args.yamlPath);
   return args;
+}
+
+// Scaffold a repo for spec-driven development: a starter project.yaml, the
+// agent guide (AGENTS.md) that teaches Claude the schema and rules, and a
+// .gitignore entry for runtime workflow state. Idempotent.
+function initProject(yamlPath) {
+  const dir = path.dirname(yamlPath);
+  const made = [];
+  if (!fs.existsSync(yamlPath)) {
+    fs.writeFileSync(yamlPath, `project: ${path.basename(dir)}\nitems: []\n`);
+    made.push(path.basename(yamlPath));
+  }
+  const agentsPath = path.join(dir, 'AGENTS.md');
+  if (!fs.existsSync(agentsPath)) {
+    fs.copyFileSync(path.join(__dirname, 'AGENTS.md'), agentsPath);
+    made.push('AGENTS.md');
+  }
+  const giPath = path.join(dir, '.gitignore');
+  const gi = fs.existsSync(giPath) ? fs.readFileSync(giPath, 'utf8') : '';
+  if (!gi.split('\n').some((l) => l.trim() === '.superpowers/')) {
+    fs.writeFileSync(giPath, `${gi.replace(/\n?$/, '\n')}.superpowers/\n`);
+    made.push('.gitignore (.superpowers/ entry)');
+  }
+  console.log(made.length ? `Initialized: ${made.join(', ')}` : 'Already initialized — nothing to do.');
+  console.log('Open the dashboard, hit the Workflow tab, and use "Plan project" to plan what you want to build.');
 }
 
 function loadProject(yamlPath) {
@@ -183,6 +212,11 @@ const MIME = {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.init) initProject(args.yamlPath);
+  if (!fs.existsSync(args.yamlPath)) {
+    console.error(`${args.yamlPath} not found — run \`diagram-copilot init\` in your repo first.`);
+    process.exit(1);
+  }
   const projectDir = path.dirname(args.yamlPath);
   const distDir = path.join(__dirname, 'web', 'dist');
   const sseClients = new Set();
@@ -231,12 +265,25 @@ function main() {
     if (url.pathname === '/api/workflow/start' && req.method === 'POST') {
       if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
       return readBody(req).then((body) => {
-        let itemId = null;
-        try { itemId = JSON.parse(body).itemId; } catch { /* handled below */ }
+        let itemId = null, step;
+        try { ({ itemId, step } = JSON.parse(body)); } catch { /* handled below */ }
         if (!itemId) return sendJson(res, 400, { error: 'itemId required' });
-        const r = workflow.start(itemId);
+        const r = workflow.start(itemId, step || 'brainstorm');
         return r.error ? sendJson(res, r.code, { error: r.error }) : sendJson(res, 200, r.state);
       }).catch(() => sendJson(res, 400, { error: 'Invalid request body' }));
+    }
+
+    if (url.pathname === '/api/workflow/plan-project' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      const r = workflow.planProject();
+      return r.error ? sendJson(res, r.code, { error: r.error }) : sendJson(res, 200, r.state);
+    }
+
+    if (url.pathname === '/api/workflow/stop' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      return workflow.stop()
+        ? sendJson(res, 200, { ok: true })
+        : sendJson(res, 409, { error: 'No running workflow session' });
     }
 
     if (url.pathname === '/api/workflow/input' && req.method === 'POST') {

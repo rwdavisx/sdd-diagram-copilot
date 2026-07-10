@@ -59,7 +59,21 @@ Keep the file valid.
 ## Running the viewer
 
 ```sh
-node server.js path/to/project.yaml [--port 4400] [--no-open]
+diagram-copilot init                 # scaffold project.yaml + this guide in any repo, then serve
+diagram-copilot [path/to/project.yaml] [--port 4400] [--no-open]   # defaults to ./project.yaml
 ```
 
-The UI live-reloads when `project.yaml` changes.
+(`node server.js …` works the same when running from a checkout.) The UI
+live-reloads when `project.yaml` changes.
+
+## The Workflow tab
+
+The viewer can also *drive* development: the Workflow tab runs headless
+Claude Code sessions through the superpowers pipeline (brainstorm → worktree
+→ plan → execute → review → finish), one bounded session per step, with
+artifacts on disk as ground truth and automatic advance between steps. The
+server updates `project.yaml` itself at the milestones (spec recorded after
+brainstorm, `in-progress` when execution starts, `shipped` when the branch
+merges) — agents running inside the workflow don't need to remember.
+"Plan project" starts a chat that interviews the human and fills
+`project.yaml` with planned items.

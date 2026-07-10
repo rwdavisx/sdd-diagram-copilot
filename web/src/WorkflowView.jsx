@@ -13,7 +13,6 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Markdown } from '@astryxdesign/core/Markdown';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Text } from '@astryxdesign/core/Text';
-import { VStack } from '@astryxdesign/core/VStack';
 
 const post = (url, body) =>
   fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -23,46 +22,50 @@ const mergeTranscript = (a, b) => {
   return [...bySeq.values()].sort((x, y) => x.seq - y.seq);
 };
 
-// The superpowers pipeline. Only brainstorm is automated so far; the rest are
-// shown so it's clear where the current step sits in the overall process.
-const STEPS = [
-  { id: 'brainstorm', label: 'Brainstorm', desc: 'Refine the idea into an approved spec (specs/<id>.md)' },
-  { id: 'worktree', label: 'Worktree', desc: 'Create an isolated branch + worktree' },
-  { id: 'plan', label: 'Plan', desc: 'Write the step-by-step implementation plan' },
-  { id: 'execute', label: 'Execute', desc: 'Subagents implement each task with TDD' },
-  { id: 'review', label: 'Review', desc: 'Code review of the finished branch' },
-  { id: 'finish', label: 'Finish', desc: 'Merge or PR; item marked shipped' },
-];
-const AUTOMATED_STEPS = 1; // steps beyond this index aren't wired up yet
+const STEP_INFO = {
+  brainstorm: { label: 'Brainstorm', desc: 'Chat to refine the idea into an approved spec (specs/<id>.md)' },
+  worktree: { label: 'Worktree', desc: 'Create an isolated branch + worktree' },
+  plan: { label: 'Plan', desc: 'Write the step-by-step implementation plan' },
+  execute: { label: 'Execute', desc: 'Subagents implement each task with TDD' },
+  review: { label: 'Review', desc: 'Code review of the finished branch' },
+  finish: { label: 'Finish', desc: 'Merge / PR / keep / discard — you choose in chat' },
+  'plan-project': { label: 'Plan project', desc: 'Chat to plan the whole app; items land in project.yaml live' },
+};
+const ITEM_PIPELINE = ['brainstorm', 'worktree', 'plan', 'execute', 'review', 'finish'];
 
 function Stepper({ state }) {
-  const currentIdx = state ? STEPS.findIndex((s) => s.id === state.step) : -1;
+  const pipeline = state?.pipeline || ITEM_PIPELINE;
+  const currentIdx = state ? pipeline.indexOf(state.step) : -1;
   return (
-    <VStack gap={1}>
-      <div className="wf-stepper">
-        {STEPS.map((s, i) => {
-          const phase = i < currentIdx ? 'done'
-            : i === currentIdx ? state.stepStatus
-            : 'upcoming';
-          return (
-            <div key={s.id} className="wf-step-wrap">
-              {i > 0 && <span className="wf-arrow">→</span>}
-              <div className={`wf-step wf-step-${phase}`} title={s.desc}>
-                <span className="wf-step-num">{i < currentIdx || (i === currentIdx && state.stepStatus === 'done') ? '✓' : i + 1}</span>
-                <span className="wf-step-label">{s.label}</span>
-              </div>
+    <div className="wf-stepper">
+      {pipeline.map((id, i) => {
+        const done = state?.steps?.[id] === 'done';
+        const skipped = state?.steps?.[id] === 'skipped';
+        const phase = done ? 'done'
+          : skipped ? 'skipped'
+          : i === currentIdx ? state.stepStatus
+          : 'upcoming';
+        return (
+          <div key={id} className="wf-step-wrap">
+            {i > 0 && <span className="wf-arrow">→</span>}
+            <div className={`wf-step wf-step-${phase}`} title={STEP_INFO[id].desc}>
+              <span className="wf-step-num">{done || (i === currentIdx && state.stepStatus === 'done') ? '✓' : i + 1}</span>
+              <span className="wf-step-label">{STEP_INFO[id].label}</span>
+              {skipped && <span className="wf-step-skip-tag">skipped</span>}
             </div>
-          );
-        })}
-      </div>
-      <Text type="supporting" size="xsm">
-        Only {STEPS.slice(0, AUTOMATED_STEPS).map((s) => s.label).join(', ')} is automated so far — later steps run from the terminal. Hover a step for details.
-      </Text>
-    </VStack>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-function StartPicker({ items, pickedId, setPickedId, prompt }) {
+// Item picker + optional starting-step choice (items with a spec can skip
+// straight to implementation) + the plan-project entry point.
+function StartControls({ items, prompt }) {
+  const [pickedId, setPickedId] = useState('');
+  const [startAt, setStartAt] = useState('brainstorm');
+  const picked = items.find((i) => i.id === pickedId);
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
       {prompt && <Text type="body">{prompt}</Text>}
@@ -72,30 +75,59 @@ function StartPicker({ items, pickedId, setPickedId, prompt }) {
         placeholder="Choose an item..."
         size="sm"
         value={pickedId}
-        onChange={setPickedId}
+        onChange={(v) => { setPickedId(v); setStartAt('brainstorm'); }}
         options={items.map((i) => ({
           value: i.id,
           label: `${i.name} (${i.status}${i.spec ? ', has spec' : ', needs spec'})`,
         }))}
       />
+      {picked?.spec && (
+        <Selector
+          label="Start at"
+          isLabelHidden
+          size="sm"
+          value={startAt}
+          onChange={setStartAt}
+          options={[
+            { value: 'brainstorm', label: 'Start at: Brainstorm (revise the spec)' },
+            { value: 'worktree', label: 'Start at: Worktree (spec is ready, implement it)' },
+          ]}
+        />
+      )}
       <Button
         label="Start workflow"
         variant="primary"
         size="sm"
         isDisabled={!pickedId}
-        onClick={() => post('/api/workflow/start', { itemId: pickedId })}
+        onClick={() => post('/api/workflow/start', { itemId: pickedId, step: startAt })}
+      />
+      <Text type="supporting" size="xsm">or</Text>
+      <Button
+        label="Plan project"
+        size="sm"
+        tooltip="Chat with Claude to plan the whole app — items land in project.yaml as you talk"
+        onClick={() => post('/api/workflow/plan-project')}
       />
     </HStack>
   );
 }
 
 const STATUS_HINTS = {
-  running: 'Claude is working — answer its questions below.',
-  done: 'Step complete.',
-  'needs-attention': 'The session ended without producing the expected artifact. Start again to retry.',
-  interrupted: 'The server restarted while this step was running. Start the workflow again to retry.',
+  done: 'Pipeline complete.',
+  stopped: 'Stopped. Start again whenever you like.',
+  'needs-attention': 'The session ended without producing the expected artifact. Retry, or start again.',
+  interrupted: 'The server restarted while this step was running. Retry to pick it back up.',
 };
-const STATUS_BADGE = { running: 'info', done: 'success', 'needs-attention': 'warning', interrupted: 'warning' };
+const RUNNING_HINTS = {
+  brainstorm: 'Claude is refining the spec — answer its questions below.',
+  worktree: 'Creating an isolated worktree + branch…',
+  plan: 'Writing the implementation plan…',
+  execute: 'Subagents are implementing the plan with TDD. You can watch, or interject below.',
+  review: 'Reviewing the branch…',
+  finish: 'Claude will ask you: merge, PR, keep, or discard. Answer below.',
+  'plan-project': 'Describe what you want to build — items appear in the diagram as you talk. Press Stop when the plan feels complete.',
+};
+const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning' };
 
 function TranscriptEvent({ ev }) {
   if (ev.kind === 'assistant-text') {
@@ -117,15 +149,17 @@ function TranscriptEvent({ ev }) {
   if (ev.kind === 'tool-use') {
     return <ChatSystemMessage>{ev.name}{ev.summary ? ` · ${ev.summary}` : ''}</ChatSystemMessage>;
   }
+  if (ev.kind === 'step-start') {
+    return <ChatSystemMessage variant="divider">{STEP_INFO[ev.step]?.label || ev.step}</ChatSystemMessage>;
+  }
   if (ev.kind === 'session-start') {
-    return <ChatSystemMessage variant="divider">session started ({ev.model})</ChatSystemMessage>;
+    return <ChatSystemMessage>session started ({ev.model})</ChatSystemMessage>;
   }
   return null;
 }
 
 export default function WorkflowView({ items }) {
   const [wf, setWf] = useState(null); // { state, transcript }
-  const [pickedId, setPickedId] = useState('');
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -159,19 +193,28 @@ export default function WorkflowView({ items }) {
   if (!wf) return <div className="loading">Loading…</div>;
   const { state, transcript } = wf;
   const running = state?.stepStatus === 'running';
-  const item = state && items.find((i) => i.id === state.itemId);
+  const item = state?.itemId ? items.find((i) => i.id === state.itemId) : null;
   const startable = items.filter((i) => i.status !== 'shipped');
   const canRetry = ['interrupted', 'needs-attention'].includes(state?.stepStatus)
-    && item && item.status !== 'shipped';
+    && (!state.itemId || (item && item.status !== 'shipped'));
   // A shipped item makes retry hints misleading — the work is already done.
-  const hint = item?.status === 'shipped' && state?.stepStatus !== 'running'
+  const hint = item?.status === 'shipped' && !running && state?.stepStatus !== 'done'
     ? 'This item has since shipped, so there is nothing left to retry.'
-    : STATUS_HINTS[state?.stepStatus];
+    : running ? RUNNING_HINTS[state.step] : STATUS_HINTS[state?.stepStatus];
 
   const send = (value) => {
     const t = value.trim();
     if (!t || !running) return;
     post('/api/workflow/input', { text: t });
+  };
+
+  const retry = () => {
+    if (state.itemId) {
+      // Resume at the step that broke; earlier steps' artifacts are on disk.
+      post('/api/workflow/start', { itemId: state.itemId, step: state.step });
+    } else {
+      post('/api/workflow/plan-project');
+    }
   };
 
   return (
@@ -182,8 +225,8 @@ export default function WorkflowView({ items }) {
           <div className="wf-transcript">
             <EmptyState
               title="No workflow yet"
-              description="A workflow takes one item through the pipeline above, starting with a brainstorm chat that produces its spec."
-              actions={<StartPicker items={startable} pickedId={pickedId} setPickedId={setPickedId} />}
+              description="Pick an item to take through the pipeline above, or plan the whole project first — Claude interviews you and fills project.yaml with every screen, feature, and integration."
+              actions={<StartControls items={startable} />}
             />
           </div>
         </>
@@ -193,22 +236,14 @@ export default function WorkflowView({ items }) {
         <>
           <Stepper state={state} />
           <HStack gap={2} vAlign="center" wrap="wrap">
-            <Text weight="bold">{item ? item.name : state.itemId}</Text>
-            <Badge variant={STATUS_BADGE[state.stepStatus] || 'neutral'} label={`${state.step}: ${state.stepStatus}`} />
+            <Text weight="bold">{item ? item.name : state.itemId || 'Project planning'}</Text>
+            <Badge variant={STATUS_BADGE[state.stepStatus] || 'neutral'} label={`${STEP_INFO[state.step]?.label || state.step}: ${state.stepStatus}`} />
             <Text type="supporting" size="xsm">{hint}</Text>
-            {canRetry && (
-              <Button
-                label={`Retry ${state.step}`}
-                variant="primary"
-                size="sm"
-                onClick={() => post('/api/workflow/start', { itemId: state.itemId })}
-              />
-            )}
+            {running && <Button label="Stop" variant="ghost" size="sm" onClick={() => post('/api/workflow/stop')} />}
+            {canRetry && <Button label={`Retry ${STEP_INFO[state.step]?.label || state.step}`} variant="primary" size="sm" onClick={retry} />}
             {state.error && <Text type="supporting" size="xsm">{state.error}</Text>}
           </HStack>
-          {!running && (
-            <StartPicker items={startable} pickedId={pickedId} setPickedId={setPickedId} prompt="Or start a different workflow:" />
-          )}
+          {!running && <StartControls items={startable} prompt="Start something else:" />}
           <div className="wf-transcript">
             {transcript.length === 0 && state.stepStatus !== 'done' ? (
               <EmptyState
@@ -220,8 +255,9 @@ export default function WorkflowView({ items }) {
                 {transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
                 {state.stepStatus === 'done' && (
                   <ChatSystemMessage>
-                    brainstorm complete — spec saved to specs/{state.itemId}.md and recorded in project.yaml.
-                    Next steps (worktree → plan → execute → review → finish) aren't automated yet; run them from the terminal.
+                    {state.itemId
+                      ? `pipeline complete for ${state.itemId} — project.yaml has been updated`
+                      : 'project planning saved to project.yaml — check the Diagram and Priority tabs'}
                   </ChatSystemMessage>
                 )}
               </ChatMessageList>

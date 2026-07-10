@@ -15,7 +15,20 @@ items:
     status: in-progress
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
     depends: [workflow-session-runner]
-    notes: Full six-step state machine, step prompts, artifact-based completion, workflow.json persistence, stepper UI. Done so far - stepper UI, server-side project.yaml auto-update (spec field on brainstorm completion), stale-artifact guard.
+    notes: Implemented - six-step state machine with auto-advance, per-step skill prompts, artifact checks (spec/worktree/plan/DONE progress/review file/worktree-gone), worktree-aware cwd, start-at-step, stop, programmatic yaml updates (spec, in-progress, shipped-on-merge). Unit-tested; still needs one real end-to-end pipeline run before calling it shipped.
+
+  - id: plan-project-mode
+    name: Plan-project chat mode
+    type: integration
+    status: in-progress
+    depends: [workflow-session-runner]
+    notes: Chat workflow that interviews you and populates project.yaml with items/depends live. Needs a spec + a real planning session before shipped.
+
+  - id: portable-init
+    name: Portable init + CLI
+    type: backend
+    status: shipped
+    notes: diagram-copilot init scaffolds project.yaml/AGENTS.md/.gitignore in any repo and starts serving; bin entry + default ./project.yaml.
 
   - id: workflow-execute-viz
     name: Execute/TDD/review visualization
