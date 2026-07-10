@@ -84,6 +84,12 @@ function loadProject(yamlPath) {
     if (!TYPES.includes(item.type)) errors.push(`Item ${label} has unknown type "${item.type}" (expected ${TYPES.join(' | ')})`);
     if (!STATUSES.includes(item.status)) errors.push(`Item ${label} has unknown status "${item.status}" (expected ${STATUSES.join(' | ')})`);
     if (item.depends != null && !Array.isArray(item.depends)) errors.push(`Item ${label}: depends must be a list of ids`);
+    if (item.contracts != null) {
+      if (!Array.isArray(item.contracts)) errors.push(`Item ${label}: contracts must be a list`);
+      else for (const c of item.contracts) {
+        if (!c || typeof c !== 'object' || !c.name) errors.push(`Item ${label}: each contract needs a name`);
+      }
+    }
   }
   for (const item of items) {
     if (!item || !Array.isArray(item.depends)) continue;
@@ -122,7 +128,8 @@ function loadProject(yamlPath) {
 
 // Element-anchored flows are declared inside the wireframe HTML itself:
 // data-flow-to="<item-id>" (target), data-flow-kind="nav|api|data" (default
-// nav), and the element's id= as the edge anchor (null → node default handle).
+// nav), data-flow-label="…" (optional edge label), and the element's id= as
+// the edge anchor (null → node default handle).
 function parseWireframeFlows(html) {
   const flows = [];
   const tagRe = /<[a-z][a-z0-9-]*(?:\s[^<>]*)?\bdata-flow-to="([^"]+)"[^<>]*>/gi;
@@ -131,7 +138,8 @@ function parseWireframeFlows(html) {
     const tag = m[0];
     const kind = (/\bdata-flow-kind="(nav|api|data)"/i.exec(tag) || [])[1] || 'nav';
     const anchor = (/\bid="([^"]+)"/i.exec(tag) || [])[1] || null;
-    flows.push({ anchor, to: m[1], kind: kind.toLowerCase() });
+    const label = (/\bdata-flow-label="([^"]+)"/i.exec(tag) || [])[1] || null;
+    flows.push({ anchor, to: m[1], kind: kind.toLowerCase(), label });
   }
   return flows;
 }
@@ -152,6 +160,25 @@ function loadWireframes(dir, items) {
         continue;
       }
       if (f.to !== item.id) flows.push({ from: item.id, ...f });
+    }
+  }
+  // Item-declared flows (project.yaml `flows:`) — the way backend and
+  // integration items, which have no wireframe, express data movement.
+  const FLOW_KINDS = ['nav', 'api', 'data'];
+  for (const item of items) {
+    if (!item || !item.id || item.flows == null) continue;
+    if (!Array.isArray(item.flows)) { errors.push(`Item "${item.id}": flows must be a list`); continue; }
+    for (const f of item.flows) {
+      if (!f || typeof f !== 'object' || !f.to) { errors.push(`Item "${item.id}": each flow needs a \`to\` id`); continue; }
+      if (!ids.has(f.to)) { errors.push(`Item "${item.id}": flow to unknown id "${f.to}"`); continue; }
+      if (f.to === item.id) continue;
+      flows.push({
+        from: item.id,
+        to: f.to,
+        kind: FLOW_KINDS.includes(f.kind) ? f.kind : 'data',
+        label: f.label || null,
+        anchor: null,
+      });
     }
   }
   return { flows, errors };

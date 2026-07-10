@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Button } from '@astryxdesign/core/Button';
-import { ChatComposer, ChatMessageList, ChatSystemMessage } from '@astryxdesign/core/Chat';
+import { ChatComposer, ChatLayout, ChatMessageList, ChatSystemMessage } from '@astryxdesign/core/Chat';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Selector } from '@astryxdesign/core/Selector';
@@ -101,9 +101,6 @@ const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'ne
 
 export default function WorkflowView({ items }) {
   const wf = useWorkflowFeed();
-  const endRef = useRef(null);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [wf?.transcript.length]);
 
   if (!wf) return <div className="loading">Loading…</div>;
   const { state, transcript } = wf;
@@ -159,13 +156,18 @@ export default function WorkflowView({ items }) {
             {state.error && <Text type="supporting" size="xsm">{state.error}</Text>}
           </HStack>
           {!running && <StartControls items={startable} prompt="Start something else:" />}
-          <div className="wf-transcript">
-            {transcript.length === 0 && state.stepStatus !== 'done' ? (
+          <ChatLayout
+            density="compact"
+            className="wf-chat"
+            composer={running && <ChatComposer onSubmit={send} placeholder="Answer Claude…" density="compact" />}
+            emptyState={(
               <EmptyState
                 title="No conversation to show"
                 description={`${hint} The transcript lives with the session, so it doesn't survive a server restart.`}
               />
-            ) : (
+            )}
+          >
+            {transcript.length === 0 && state.stepStatus !== 'done' ? null : (
               <ChatMessageList density="compact">
                 {transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
                 {state.stepStatus === 'done' && (
@@ -177,9 +179,7 @@ export default function WorkflowView({ items }) {
                 )}
               </ChatMessageList>
             )}
-            <div ref={endRef} />
-          </div>
-          {running && <ChatComposer onSubmit={send} placeholder="Answer Claude…" density="compact" />}
+          </ChatLayout>
         </>
       )}
     </div>

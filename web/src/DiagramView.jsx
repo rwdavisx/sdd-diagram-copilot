@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ReactFlow, Background, Controls, Handle, Position, MarkerType, useUpdateNodeInternals } from '@xyflow/react';
+import { ReactFlow, Background, Controls, Handle, Panel, Position, MarkerType, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 import dagre from 'dagre';
 import { HStack } from '@astryxdesign/core/HStack';
 import { TypeBadge, StatusChip, SpecFlag } from './chips.jsx';
@@ -51,7 +51,13 @@ function WireframeNode({ id, data }) {
         const el = doc.getElementById(anchorId);
         if (!el) continue;
         const r = el.getBoundingClientRect();
-        found[anchorId] = { x: r.right * WF_SCALE, y: WF_HEADER_H + (r.top + r.height / 2) * WF_SCALE };
+        // Pin anchors to the node's right edge at the element's height —
+        // wireframe content can overflow the 800px design width, and a handle
+        // placed at r.right would then float outside the node.
+        found[anchorId] = {
+          x: WF_W * WF_SCALE,
+          y: WF_HEADER_H + Math.min(Math.max(r.top + r.height / 2, 0), rawH) * WF_SCALE,
+        };
       }
       setContentH(rawH);
       setAnchors(found);
@@ -105,6 +111,29 @@ function LaneNode({ data }) {
 }
 
 const nodeTypes = { item: ItemNode, wireframe: WireframeNode, lane: LaneNode };
+
+// The initial fitView runs before wireframe iframes report their real size,
+// leaving the diagram cropped. Refit (debounced) as measurements land, but
+// only until the user pans/zooms — then their viewport wins.
+function FitOnMeasure({ signature }) {
+  const { fitView } = useReactFlow();
+  const userMoved = useRef(false);
+  useEffect(() => {
+    const onMove = () => { userMoved.current = true; };
+    window.addEventListener('pointerdown', onMove, true);
+    window.addEventListener('wheel', onMove, true);
+    return () => {
+      window.removeEventListener('pointerdown', onMove, true);
+      window.removeEventListener('wheel', onMove, true);
+    };
+  }, []);
+  useEffect(() => {
+    if (userMoved.current) return;
+    const t = setTimeout(() => { if (!userMoved.current) fitView({ padding: 0.1 }); }, 150);
+    return () => clearTimeout(t);
+  }, [signature, fitView]);
+  return null;
+}
 
 // dagre (left→right) decides horizontal position from the dependency graph;
 // vertical position is forced into one lane per type so the three layers of
@@ -206,6 +235,8 @@ export default function DiagramView({ items, flows = [], rev = 0, selectedId, on
           id: `${item.id}->${dep}`,
           source: item.id,
           target: dep,
+          type: 'smoothstep',
+          pathOptions: { borderRadius: 12 },
           markerEnd: { type: MarkerType.ArrowClosed },
           className: 'flow-edge',
         })),
@@ -217,6 +248,10 @@ export default function DiagramView({ items, flows = [], rev = 0, selectedId, on
         source: f.from,
         sourceHandle: f.anchor || undefined,
         target: f.to,
+        type: 'smoothstep',
+        pathOptions: { borderRadius: 12 },
+        animated: f.kind !== 'nav',
+        label: f.label || undefined, // kind is already encoded by line style + legend
         markerEnd: { type: MarkerType.ArrowClosed },
         className: `flow-edge flow-${f.kind}`,
       }));
@@ -239,6 +274,13 @@ export default function DiagramView({ items, flows = [], rev = 0, selectedId, on
       >
         <Background gap={24} />
         <Controls showInteractive={false} />
+        <FitOnMeasure signature={Object.values(sizes).map((s) => Math.round(s.h)).join(',')} />
+        <Panel position="top-right" className="diagram-legend">
+          <span><i className="lg lg-depends" /> depends</span>
+          <span><i className="lg lg-nav" /> nav</span>
+          <span><i className="lg lg-api" /> api</span>
+          <span><i className="lg lg-data" /> data</span>
+        </Panel>
       </ReactFlow>
     </div>
   );

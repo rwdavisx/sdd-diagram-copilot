@@ -9,17 +9,22 @@ const { loadProject, parseWireframeFlows, loadWireframes } = require('../server'
 
 test('parses anchor, target, and kind from a tag', () => {
   const flows = parseWireframeFlows('<button id="go" data-flow-to="checkout" data-flow-kind="nav">Go</button>');
-  assert.deepStrictEqual(flows, [{ anchor: 'go', to: 'checkout', kind: 'nav' }]);
+  assert.deepStrictEqual(flows, [{ anchor: 'go', to: 'checkout', kind: 'nav', label: null }]);
 });
 
 test('kind defaults to nav; missing id gives a null anchor', () => {
   const flows = parseWireframeFlows('<a data-flow-to="home">back</a>');
-  assert.deepStrictEqual(flows, [{ anchor: null, to: 'home', kind: 'nav' }]);
+  assert.deepStrictEqual(flows, [{ anchor: null, to: 'home', kind: 'nav', label: null }]);
 });
 
 test('attribute order within the tag does not matter', () => {
   const flows = parseWireframeFlows('<form data-flow-kind="api" data-flow-to="orders-api" id="order-form" class="x">');
-  assert.deepStrictEqual(flows, [{ anchor: 'order-form', to: 'orders-api', kind: 'api' }]);
+  assert.deepStrictEqual(flows, [{ anchor: 'order-form', to: 'orders-api', kind: 'api', label: null }]);
+});
+
+test('data-flow-label is captured', () => {
+  const flows = parseWireframeFlows('<form id="f" data-flow-to="orders-api" data-flow-kind="api" data-flow-label="create order">');
+  assert.deepStrictEqual(flows, [{ anchor: 'f', to: 'orders-api', kind: 'api', label: 'create order' }]);
 });
 
 test('finds multiple flow elements across a document', () => {
@@ -92,8 +97,42 @@ test('loadWireframes derives flows and drops dangling targets with an error', ()
   const { items } = loadProject(file);
   const { flows, errors } = loadWireframes(dir, items);
   assert.deepStrictEqual(flows, [
-    { from: 'cart', anchor: 'go', to: 'checkout', kind: 'nav' },
-    { from: 'cart', anchor: 'f', to: 'orders-api', kind: 'api' },
+    { from: 'cart', anchor: 'go', to: 'checkout', kind: 'nav', label: null },
+    { from: 'cart', anchor: 'f', to: 'orders-api', kind: 'api', label: null },
   ]);
   assert.ok(errors.some((e) => e.includes('"nope"')));
+});
+
+// ---------- item-declared flows + contracts ----------
+
+test('item-level flows merge in with defaults; bad targets error', () => {
+  fs.writeFileSync(file, YAML.replace(
+    'name: Orders API',
+    'name: Orders API\n    flows:\n      - { to: cart, kind: data, label: order rows }\n      - { to: nope }\n      - { to: checkout }',
+  ));
+  const { items } = loadProject(file);
+  const { flows, errors } = loadWireframes(dir, items);
+  assert.deepStrictEqual(flows, [
+    { from: 'orders-api', to: 'cart', kind: 'data', label: 'order rows', anchor: null },
+    { from: 'orders-api', to: 'checkout', kind: 'data', label: null, anchor: null },
+  ]);
+  assert.ok(errors.some((e) => e.includes('"nope"')));
+});
+
+test('flows that are not a list error without crashing', () => {
+  fs.writeFileSync(file, YAML.replace('name: Orders API', 'name: Orders API\n    flows: yes'));
+  const { items } = loadProject(file);
+  const { flows, errors } = loadWireframes(dir, items);
+  assert.deepStrictEqual(flows, []);
+  assert.ok(errors.some((e) => e.includes('flows must be a list')));
+});
+
+test('contracts validate: list shape and required name', () => {
+  fs.writeFileSync(file, YAML.replace(
+    'name: Orders API',
+    'name: Orders API\n    contracts:\n      - name: POST /api/orders\n        kind: api\n      - kind: db',
+  ));
+  const { errors } = loadProject(file);
+  assert.strictEqual(errors.filter((e) => e.includes('contract')).length, 1);
+  assert.ok(errors.some((e) => e.includes('needs a name')));
 });

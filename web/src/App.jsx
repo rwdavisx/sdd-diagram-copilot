@@ -9,6 +9,8 @@ import BoardView from './BoardView.jsx';
 import PriorityView from './PriorityView.jsx';
 import WorkflowView from './WorkflowView.jsx';
 import PlanningView from './PlanningView.jsx';
+import SchemaView from './SchemaView.jsx';
+import { usePaneWidth } from './resize.jsx';
 import { onServerEvent } from './useWorkflowFeed.jsx';
 import DetailPanel from './DetailPanel.jsx';
 import './App.css';
@@ -21,6 +23,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [rev, setRev] = useState(0); // bumped per reload so wireframe iframes refresh
+  const [detailW, onDetailResize] = usePaneWidth('dc-detail-w', 380, { min: 300, max: 720, fromRight: true });
 
   const refetch = useCallback(() => {
     fetch('/api/project')
@@ -67,6 +70,7 @@ export default function App() {
           <Tab value="diagram" label="Diagram" />
           <Tab value="planning" label="Planning" />
           <Tab value="board" label="Board" />
+          <Tab value="schemas" label="Schemas" />
           <Tab value="priority" label="Priority" />
           <Tab value="workflow" label="Workflow" />
         </TabList>
@@ -86,10 +90,14 @@ export default function App() {
         {view === 'diagram' && <DiagramView items={items} flows={data.flows || []} rev={rev} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'planning' && <PlanningView items={items} flows={data.flows || []} rev={rev} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'schemas' && <SchemaView items={items} onSelect={setSelectedId} />}
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
         {view === 'workflow' && <WorkflowView items={items} />}
         {selected && (
-          <DetailPanel item={selected} items={items} onSelect={setSelectedId} onClose={() => setSelectedId(null)} onStartWorkflow={startWorkflow} />
+          <>
+            <div className="pane-resizer" onPointerDown={onDetailResize} />
+            <DetailPanel item={selected} items={items} width={detailW} onSelect={setSelectedId} onClose={() => setSelectedId(null)} onStartWorkflow={startWorkflow} />
+          </>
         )}
       </main>
     </div>

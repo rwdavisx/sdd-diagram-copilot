@@ -1,28 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Button } from '@astryxdesign/core/Button';
-import { ChatComposer, ChatMessageList } from '@astryxdesign/core/Chat';
+import { ChatComposer, ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { VStack } from '@astryxdesign/core/VStack';
 import { post, useWorkflowFeed, TranscriptEvent } from './useWorkflowFeed.jsx';
+import { usePaneWidth } from './resize.jsx';
 import DiagramView from './DiagramView.jsx';
 
 const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning' };
 
 export default function PlanningView({ items, flows, rev, selectedId, onSelect }) {
   const wf = useWorkflowFeed();
-  const endRef = useRef(null);
   const [startError, setStartError] = useState(null);
   const [iterateOn, setIterateOn] = useState(null); // item id the chat is focused on
+  const [chatW, onResizeDown] = usePaneWidth('dc-planning-chat-w', 400, { min: 300, max: 760 });
 
   // Selecting a frontend screen on the canvas focuses the chat on it.
   useEffect(() => {
     const sel = items.find((i) => i.id === selectedId);
     setIterateOn(sel && sel.type === 'frontend' ? sel.id : null);
   }, [selectedId, items]);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [wf?.transcript.length]);
 
   const state = wf?.state;
   const isPlanning = state?.pipeline?.[0] === 'plan-project';
@@ -46,9 +46,25 @@ export default function PlanningView({ items, flows, rev, selectedId, onSelect }
     post('/api/workflow/input', { text: prefix + t });
   };
 
+  const composer = running && (
+    <VStack gap={1}>
+      {focused && (
+        <HStack gap={1} vAlign="center">
+          <Badge variant="info" label={`Iterating: ${focused.name}`} />
+          <Button label="✕" variant="ghost" size="sm" tooltip="Stop focusing this screen" onClick={() => { setIterateOn(null); onSelect(null); }} />
+        </HStack>
+      )}
+      <ChatComposer
+        onSubmit={send}
+        placeholder={focused ? `Describe changes to ${focused.name}…` : 'Describe what you want to build…'}
+        density="compact"
+      />
+    </VStack>
+  );
+
   return (
     <div className="planning">
-      <div className="planning-chat">
+      <div className="planning-chat" style={{ width: chatW }}>
         {!wf && <div className="loading">Loading…</div>}
 
         {wf && !isPlanning && (
@@ -70,28 +86,15 @@ export default function PlanningView({ items, flows, rev, selectedId, onSelect }
                 ? <Button label="Stop" variant="ghost" size="sm" onClick={() => post('/api/workflow/stop')} />
                 : <Button label="Plan again" size="sm" onClick={start} />}
             </HStack>
-            <div className="wf-transcript">
+            <ChatLayout density="compact" className="wf-chat" composer={composer}>
               <ChatMessageList density="compact">
                 {wf.transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
               </ChatMessageList>
-              <div ref={endRef} />
-            </div>
-            {running && focused && (
-              <HStack gap={1} vAlign="center">
-                <Badge variant="info" label={`Iterating: ${focused.name}`} />
-                <Button label="✕" variant="ghost" size="sm" tooltip="Stop focusing this screen" onClick={() => { setIterateOn(null); onSelect(null); }} />
-              </HStack>
-            )}
-            {running && (
-              <ChatComposer
-                onSubmit={send}
-                placeholder={focused ? `Describe changes to ${focused.name}…` : 'Describe what you want to build…'}
-                density="compact"
-              />
-            )}
+            </ChatLayout>
           </>
         )}
       </div>
+      <div className="pane-resizer" onPointerDown={onResizeDown} />
       <div className="planning-canvas">
         <DiagramView items={items} flows={flows} rev={rev} selectedId={selectedId} onSelect={onSelect} />
       </div>

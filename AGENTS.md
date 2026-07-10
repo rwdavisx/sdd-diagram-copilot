@@ -19,6 +19,15 @@ items:
     depends: [auth-api]    # optional; ids of items this item calls/uses
     notes: freeform text   # optional
     wireframe: design/wireframes/login-page.html  # optional; defaults to this convention path when the file exists
+    flows:                 # optional; data movement this item initiates (drawn as labeled edges)
+      - { to: users-db, kind: data, label: "user rows" }   # kind: nav | api | data (default data)
+    contracts:             # optional; the interfaces this item owns (browsable in the Schemas tab)
+      - name: POST /api/login      # required
+        kind: api                  # api | db | event (free-form, badge only)
+        description: optional one-liner
+        schema: |                  # free-form block — shape, fields, SQL, JSON, whatever reads best
+          request:  { email: string, password: string }
+          response: { token: string }
 ```
 
 The server validates on every load: unknown `type`/`status`, duplicate `id`s,
@@ -47,7 +56,12 @@ Keep the file valid.
    update its `depends` list. This drives the architecture diagram.
 5. **Never delete shipped items**; if something is removed from the product,
    delete its entry in the same change that removes the code.
-6. **Don't edit the viewer's code to change project state.** State lives only
+6. **Declare contracts and flows as soon as an interface exists.** When you
+   design an API endpoint, database table, or event, record it under the owning
+   item's `contracts:` (name, kind, schema). When an item reads or writes
+   another item's data outside of a wireframe interaction, add a `flows:` entry
+   with a short label — this is what makes data movement visible on the diagram.
+7. **Don't edit the viewer's code to change project state.** State lives only
    in `project.yaml`.
 
 ## Wireframes

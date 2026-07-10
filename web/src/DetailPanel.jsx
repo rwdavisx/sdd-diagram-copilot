@@ -8,7 +8,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import { TypeBadge, STATUS_VARIANT } from './chips.jsx';
 
-export default function DetailPanel({ item, items, onSelect, onClose, onStartWorkflow }) {
+export default function DetailPanel({ item, items, width, onSelect, onClose, onStartWorkflow }) {
   const [spec, setSpec] = useState(null); // { text } | { error } | null while loading
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function DetailPanel({ item, items, onSelect, onClose, onStartWor
   const dependents = items.filter((i) => (i.depends || []).includes(item.id));
 
   return (
-    <aside className="detail">
+    <aside className="detail" style={width ? { width } : undefined}>
       <VStack gap={3}>
         <HStack gap={2} vAlign="center">
           <Text type="large" weight="bold">{item.name}</Text>
@@ -69,6 +69,21 @@ export default function DetailPanel({ item, items, onSelect, onClose, onStartWor
                 <Button key={i.id} label={i.name} variant="secondary" size="sm" onClick={() => onSelect(i.id)} />
               ))}
             </HStack>
+          </VStack>
+        )}
+
+        {Array.isArray(item.contracts) && item.contracts.length > 0 && (
+          <VStack gap={1}>
+            <Text type="label">Contracts</Text>
+            {item.contracts.map((c, i) => (
+              <div key={i} className="schema-card">
+                <HStack gap={2} vAlign="center">
+                  <Text weight="bold">{c.name}</Text>
+                  {c.kind && <Badge variant="neutral" label={c.kind} />}
+                </HStack>
+                {c.schema && <pre className="schema-body">{String(c.schema).trimEnd()}</pre>}
+              </div>
+            ))}
           </VStack>
         )}
 
