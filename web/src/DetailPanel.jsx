@@ -55,7 +55,7 @@ export default function DetailPanel({ item, items, onSelect, onClose, onStartWor
               {item.depends.map((d) => {
                 const target = items.find((i) => i.id === d);
                 return target
-                  ? <Button key={d} label={target.name} variant="ghost" size="sm" onClick={() => onSelect(d)} />
+                  ? <Button key={d} label={target.name} variant="secondary" size="sm" onClick={() => onSelect(d)} />
                   : <Badge key={d} variant="error" label={d} />;
               })}
             </HStack>
@@ -66,7 +66,7 @@ export default function DetailPanel({ item, items, onSelect, onClose, onStartWor
             <Text type="label">Used by</Text>
             <HStack gap={1} wrap="wrap">
               {dependents.map((i) => (
-                <Button key={i.id} label={i.name} variant="ghost" size="sm" onClick={() => onSelect(i.id)} />
+                <Button key={i.id} label={i.name} variant="secondary" size="sm" onClick={() => onSelect(i.id)} />
               ))}
             </HStack>
           </VStack>

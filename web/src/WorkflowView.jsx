@@ -8,6 +8,7 @@ import {
   ChatMessageList,
   ChatSystemMessage,
 } from '@astryxdesign/core/Chat';
+import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Markdown } from '@astryxdesign/core/Markdown';
 import { Selector } from '@astryxdesign/core/Selector';
@@ -37,30 +38,34 @@ const AUTOMATED_STEPS = 1; // steps beyond this index aren't wired up yet
 function Stepper({ state }) {
   const currentIdx = state ? STEPS.findIndex((s) => s.id === state.step) : -1;
   return (
-    <div className="wf-stepper">
-      {STEPS.map((s, i) => {
-        const phase = i < currentIdx ? 'done'
-          : i === currentIdx ? state.stepStatus
-          : 'upcoming';
-        return (
-          <div key={s.id} className="wf-step-wrap">
-            {i > 0 && <span className="wf-arrow">→</span>}
-            <div className={`wf-step wf-step-${phase}`} title={s.desc}>
-              <span className="wf-step-num">{i < currentIdx || (i === currentIdx && state.stepStatus === 'done') ? '✓' : i + 1}</span>
-              <span className="wf-step-label">{s.label}</span>
-              {i >= AUTOMATED_STEPS && <span className="wf-step-manual" title="Not automated yet — run this step from the terminal">manual</span>}
+    <VStack gap={1}>
+      <div className="wf-stepper">
+        {STEPS.map((s, i) => {
+          const phase = i < currentIdx ? 'done'
+            : i === currentIdx ? state.stepStatus
+            : 'upcoming';
+          return (
+            <div key={s.id} className="wf-step-wrap">
+              {i > 0 && <span className="wf-arrow">→</span>}
+              <div className={`wf-step wf-step-${phase}`} title={s.desc}>
+                <span className="wf-step-num">{i < currentIdx || (i === currentIdx && state.stepStatus === 'done') ? '✓' : i + 1}</span>
+                <span className="wf-step-label">{s.label}</span>
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+      <Text type="supporting" size="xsm">
+        Only {STEPS.slice(0, AUTOMATED_STEPS).map((s) => s.label).join(', ')} is automated so far — later steps run from the terminal. Hover a step for details.
+      </Text>
+    </VStack>
   );
 }
 
 function StartPicker({ items, pickedId, setPickedId, prompt }) {
   return (
-    <HStack gap={2} vAlign="end" wrap="wrap">
-      <Text type="body" as="p">{prompt}</Text>
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      {prompt && <Text type="body">{prompt}</Text>}
       <Selector
         label="Item"
         isLabelHidden
@@ -156,6 +161,12 @@ export default function WorkflowView({ items }) {
   const running = state?.stepStatus === 'running';
   const item = state && items.find((i) => i.id === state.itemId);
   const startable = items.filter((i) => i.status !== 'shipped');
+  const canRetry = ['interrupted', 'needs-attention'].includes(state?.stepStatus)
+    && item && item.status !== 'shipped';
+  // A shipped item makes retry hints misleading — the work is already done.
+  const hint = item?.status === 'shipped' && state?.stepStatus !== 'running'
+    ? 'This item has since shipped, so there is nothing left to retry.'
+    : STATUS_HINTS[state?.stepStatus];
 
   const send = (value) => {
     const t = value.trim();
@@ -166,43 +177,58 @@ export default function WorkflowView({ items }) {
   return (
     <div className="workflow">
       {!state && (
-        <VStack gap={4}>
+        <>
           <Stepper state={null} />
-          <StartPicker
-            items={startable}
-            pickedId={pickedId}
-            setPickedId={setPickedId}
-            prompt="A workflow takes one item through the pipeline above, starting with a brainstorm chat that produces its spec. Pick an item:"
-          />
-        </VStack>
+          <div className="wf-transcript">
+            <EmptyState
+              title="No workflow yet"
+              description="A workflow takes one item through the pipeline above, starting with a brainstorm chat that produces its spec."
+              actions={<StartPicker items={startable} pickedId={pickedId} setPickedId={setPickedId} />}
+            />
+          </div>
+        </>
       )}
 
       {state && (
         <>
           <Stepper state={state} />
-          <HStack gap={2} vAlign="center">
+          <HStack gap={2} vAlign="center" wrap="wrap">
             <Text weight="bold">{item ? item.name : state.itemId}</Text>
             <Badge variant={STATUS_BADGE[state.stepStatus] || 'neutral'} label={`${state.step}: ${state.stepStatus}`} />
-            <Text type="supporting" size="xsm">{STATUS_HINTS[state.stepStatus]}</Text>
-            {state.error && <Text type="supporting" size="xsm" color="accent">{state.error}</Text>}
+            <Text type="supporting" size="xsm">{hint}</Text>
+            {canRetry && (
+              <Button
+                label={`Retry ${state.step}`}
+                variant="primary"
+                size="sm"
+                onClick={() => post('/api/workflow/start', { itemId: state.itemId })}
+              />
+            )}
+            {state.error && <Text type="supporting" size="xsm">{state.error}</Text>}
           </HStack>
+          {!running && (
+            <StartPicker items={startable} pickedId={pickedId} setPickedId={setPickedId} prompt="Or start a different workflow:" />
+          )}
           <div className="wf-transcript">
-            <ChatMessageList density="compact">
-              {transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
-              {state.stepStatus === 'done' && (
-                <ChatSystemMessage>
-                  brainstorm complete — spec saved to specs/{state.itemId}.md and recorded in project.yaml.
-                  Next steps (worktree → plan → execute → review → finish) aren't automated yet; run them from the terminal.
-                </ChatSystemMessage>
-              )}
-            </ChatMessageList>
+            {transcript.length === 0 && state.stepStatus !== 'done' ? (
+              <EmptyState
+                title="No conversation to show"
+                description={`${hint} The transcript lives with the session, so it doesn't survive a server restart.`}
+              />
+            ) : (
+              <ChatMessageList density="compact">
+                {transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
+                {state.stepStatus === 'done' && (
+                  <ChatSystemMessage>
+                    brainstorm complete — spec saved to specs/{state.itemId}.md and recorded in project.yaml.
+                    Next steps (worktree → plan → execute → review → finish) aren't automated yet; run them from the terminal.
+                  </ChatSystemMessage>
+                )}
+              </ChatMessageList>
+            )}
             <div ref={endRef} />
           </div>
-          {running ? (
-            <ChatComposer onSubmit={send} placeholder="Answer Claude…" density="compact" />
-          ) : (
-            <StartPicker items={startable} pickedId={pickedId} setPickedId={setPickedId} prompt="Start another workflow:" />
-          )}
+          {running && <ChatComposer onSubmit={send} placeholder="Answer Claude…" density="compact" />}
         </>
       )}
     </div>

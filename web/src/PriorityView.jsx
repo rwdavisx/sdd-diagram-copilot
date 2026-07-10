@@ -26,8 +26,9 @@ export default function PriorityView({ items, selectedId, onSelect, onStartWorkf
     <div className="priority">
       {data.warnings.map((w, i) => <Banner key={i} status="warning" title={w} />)}
       <ol className="priority-list">
-        {data.items.map((item) => (
+        {data.items.map((item, i) => (
           <li key={item.id}>
+            <span className="priority-rank">{i + 1}</span>
             <button
               className={`card status-${item.status} ${item.id === selectedId ? 'selected' : ''}`}
               onClick={() => onSelect(item.id)}
