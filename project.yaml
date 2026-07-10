@@ -5,17 +5,17 @@ items:
   - id: workflow-session-runner
     name: Workflow session runner + chat
     type: integration
-    status: in-progress
+    status: shipped
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
     notes: Agent SDK integration, SSE relay, input endpoint, Workflow tab with transcript + chat, start + brainstorm step.
 
   - id: workflow-orchestration
     name: Step orchestration + artifact detection
     type: backend
-    status: planned
+    status: in-progress
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
     depends: [workflow-session-runner]
-    notes: Full six-step state machine, step prompts, artifact-based completion, workflow.json persistence, stepper UI.
+    notes: Full six-step state machine, step prompts, artifact-based completion, workflow.json persistence, stepper UI. Done so far - stepper UI, server-side project.yaml auto-update (spec field on brainstorm completion), stale-artifact guard.
 
   - id: workflow-execute-viz
     name: Execute/TDD/review visualization

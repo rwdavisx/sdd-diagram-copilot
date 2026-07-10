@@ -15,9 +15,10 @@ function ItemNode({ data }) {
       <div className="flow-node-name">{data.item.name}</div>
       <div className="flow-node-meta">
         <span className={`badge type-${data.item.type}`}>{data.item.type}</span>
-        <span className={`dot status-${data.item.status}`} title={data.item.status} />
-        {data.item.spec ? <span className="spec-flag" title={data.item.spec}>spec</span>
-          : <span className="spec-flag missing" title="no spec yet">no spec</span>}
+        <span className={`dot status-${data.item.status}`} />
+        <span className="status-text">{data.item.status}</span>
+        {data.item.spec ? <span className="spec-flag" title={`spec: ${data.item.spec}`}>spec ✓</span>
+          : <span className="spec-flag missing" title="no spec written yet">no spec</span>}
       </div>
       <Handle type="source" position={Position.Right} />
     </div>

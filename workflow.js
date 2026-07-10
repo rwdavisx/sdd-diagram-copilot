@@ -4,6 +4,11 @@
 const fs = require('fs');
 const path = require('path');
 
+// The full superpowers pipeline, in order. Only `brainstorm` is automated so
+// far; the list is served with workflow state so the UI can show where the
+// current step sits in the overall process.
+const STEPS = ['brainstorm', 'worktree', 'plan', 'execute', 'review', 'finish'];
+
 function brainstormPrompt(item) {
   return `You are working on the item "${item.id}" ("${item.name}") from this project's project.yaml.
 Use the superpowers:brainstorming skill to refine this idea into an approved design. Ask me questions one at a time; I am answering from a chat UI, so keep each question self-contained.
@@ -12,7 +17,7 @@ When the design is approved: save the spec to specs/${item.id}.md, set this item
 
 let runCounter = 0;
 
-function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
+function createWorkflow({ projectDir, loadItems, runSession, broadcast, updateItem = () => {} }) {
   const stateFile = path.join(projectDir, '.superpowers', 'workflow.json');
   const transcript = [];
   let state = null;
@@ -22,7 +27,7 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
   try {
     state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
     // Its session died with the previous server process.
-    if (state && state.stepStatus === 'running') state.stepStatus = 'interrupted';
+    if (state && state.stepStatus === 'running') { state.stepStatus = 'interrupted'; persist(); }
   } catch { state = null; }
 
   function persist() {
@@ -42,13 +47,25 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
     broadcast(ev);
   }
 
+  // Artifact-based completion, but only for artifacts produced by THIS run:
+  // a spec file left over from earlier work must not instantly mark a fresh
+  // run as done. "Fresh" = created after the run started, or modified since.
+  function specSavedThisRun() {
+    const specPath = path.join(projectDir, 'specs', `${state.itemId}.md`);
+    try {
+      const { mtimeMs } = fs.statSync(specPath);
+      return !state.specExistedAtStart || mtimeMs > Date.parse(state.startedAt);
+    } catch { return false; }
+  }
+
   function onEvent(run, ev) {
     if (run !== runCounter) return; // stale run; a newer run is active
     if (ev.kind === 'session-start') { state = { ...state, sessionId: ev.sessionId }; persist(); }
     record(ev);
-    // Artifact-based completion: the brainstorm step is done when the skill
-    // has saved the spec file, regardless of what the transcript says.
-    if (ev.kind === 'turn-end' && fs.existsSync(path.join(projectDir, 'specs', `${state.itemId}.md`))) {
+    if (ev.kind === 'turn-end' && specSavedThisRun()) {
+      // The server, not the session, keeps project.yaml truthful: record the
+      // spec path programmatically so it can't be forgotten.
+      updateItem(state.itemId, { spec: `specs/${state.itemId}.md` });
       setStatus('done');
       session.close();
     }
@@ -63,7 +80,14 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
     const run = ++runCounter;
     transcript.length = 0;
     seq = 0;
-    state = { itemId, step: 'brainstorm', stepStatus: 'running', sessionId: null, startedAt: new Date().toISOString() };
+    state = {
+      itemId,
+      step: 'brainstorm',
+      stepStatus: 'running',
+      sessionId: null,
+      startedAt: new Date().toISOString(),
+      specExistedAtStart: fs.existsSync(path.join(projectDir, 'specs', `${itemId}.md`)),
+    };
     persist();
     broadcast({ kind: 'workflow', state });
 
@@ -87,4 +111,4 @@ function createWorkflow({ projectDir, loadItems, runSession, broadcast }) {
   return { start, input, getState: () => state, getTranscript: () => transcript };
 }
 
-module.exports = { createWorkflow, brainstormPrompt };
+module.exports = { createWorkflow, brainstormPrompt, STEPS };

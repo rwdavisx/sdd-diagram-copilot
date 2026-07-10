@@ -10,7 +10,7 @@ const ITEMS = [
   { id: 'feat-b', name: 'Feature B', status: 'shipped' },
 ];
 
-let dir, sessions, broadcasts;
+let dir, sessions, broadcasts, updates;
 function fakeRunSession(args) {
   const session = {
     args,
@@ -30,6 +30,7 @@ function makeWorkflow() {
     loadItems: () => ITEMS,
     runSession: fakeRunSession,
     broadcast: (ev) => broadcasts.push(ev),
+    updateItem: (id, fields) => updates.push([id, fields]),
   });
 }
 
@@ -37,6 +38,7 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-'));
   sessions = [];
   broadcasts = [];
+  updates = [];
 });
 
 test('start rejects unknown and shipped items', () => {
@@ -112,6 +114,33 @@ test('turn-end with specs/<id>.md present completes the step and closes the sess
   sessions[0].args.onEvent({ kind: 'turn-end', ok: true, costUsd: 0 });
   assert.strictEqual(wf.getState().stepStatus, 'done');
   assert.strictEqual(sessions[0].closed, true);
+});
+
+test('completion records the spec path in project.yaml via updateItem', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'specs', 'feat-a.md'), '# spec');
+  sessions[0].args.onEvent({ kind: 'turn-end', ok: true, costUsd: 0 });
+  assert.deepStrictEqual(updates, [['feat-a', { spec: 'specs/feat-a.md' }]]);
+});
+
+test('a spec file left over from earlier work does not instantly complete a new run', () => {
+  fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'specs', 'feat-a.md'), '# old spec');
+  const past = new Date(Date.now() - 60000);
+  fs.utimesSync(path.join(dir, 'specs', 'feat-a.md'), past, past);
+
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  sessions[0].args.onEvent({ kind: 'turn-end', ok: true, costUsd: 0 });
+  assert.strictEqual(wf.getState().stepStatus, 'running');
+
+  // Rewriting the spec during the run counts as completion.
+  const future = new Date(Date.now() + 1000);
+  fs.utimesSync(path.join(dir, 'specs', 'feat-a.md'), future, future);
+  sessions[0].args.onEvent({ kind: 'turn-end', ok: true, costUsd: 0 });
+  assert.strictEqual(wf.getState().stepStatus, 'done');
 });
 
 test('session ending while still running marks needs-attention', async () => {

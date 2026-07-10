@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const yaml = require('js-yaml');
-const { createWorkflow } = require('./workflow');
+const { createWorkflow, STEPS } = require('./workflow');
 const { startSession } = require('./sessions');
 
 const TYPES = ['frontend', 'backend', 'integration'];
@@ -129,6 +129,30 @@ function computePriority(items) {
   };
 }
 
+// Set scalar fields on one item in project.yaml with a line-targeted edit,
+// preserving comments/formatting everywhere else (a yaml round-trip would
+// destroy them). This is how workflow state lands in the yaml automatically
+// instead of relying on a session remembering to do it.
+function updateProjectItem(yamlPath, itemId, fields) {
+  let text;
+  try { text = fs.readFileSync(yamlPath, 'utf8'); } catch { return false; }
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => new RegExp(`^\\s*-\\s+id:\\s*${itemId}\\s*$`).test(l));
+  if (start === -1) return false;
+  const indent = lines[start].match(/^\s*/)[0] + '  ';
+  let end = lines.length; // item block ends at the next list entry or top-level key
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^\s*-\s/.test(lines[i]) || /^\S/.test(lines[i])) { end = i; break; }
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    const at = lines.slice(start + 1, end).findIndex((l) => new RegExp(`^\\s*${key}:`).test(l));
+    if (at !== -1) lines[start + 1 + at] = `${indent}${key}: ${value}`;
+    else lines.splice(end++, 0, `${indent}${key}: ${value}`);
+  }
+  fs.writeFileSync(yamlPath, lines.join('\n'));
+  return true;
+}
+
 // Rejects cross-origin POSTs (LAN/CSRF) while allowing same-origin and
 // no-Origin requests (curl, same-origin fetches that omit it).
 function originAllowed(req, port) {
@@ -167,6 +191,7 @@ function main() {
     projectDir,
     loadItems: () => loadProject(args.yamlPath).items,
     runSession: startSession,
+    updateItem: (itemId, fields) => updateProjectItem(args.yamlPath, itemId, fields),
     broadcast: (ev) => {
       const frame = `event: workflow\ndata: ${JSON.stringify(ev)}\n\n`;
       for (const client of sseClients) client.write(frame);
@@ -200,7 +225,7 @@ function main() {
     }
 
     if (url.pathname === '/api/workflow' && req.method === 'GET') {
-      return sendJson(res, 200, { state: workflow.getState(), transcript: workflow.getTranscript() });
+      return sendJson(res, 200, { state: workflow.getState(), transcript: workflow.getTranscript(), steps: STEPS });
     }
 
     if (url.pathname === '/api/workflow/start' && req.method === 'POST') {
@@ -281,4 +306,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { loadProject, computePriority };
+module.exports = { loadProject, computePriority, updateProjectItem };
