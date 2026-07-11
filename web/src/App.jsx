@@ -11,6 +11,7 @@ import WorkflowView from './WorkflowView.jsx';
 import DesignView from './DesignView.jsx';
 import SchemaView from './SchemaView.jsx';
 import TestsView from './TestsView.jsx';
+import GraphView from './GraphView.jsx';
 import { Button } from '@astryxdesign/core/Button';
 import { usePaneWidth, usePersistedOpen } from './resize.jsx';
 import { onServerEvent } from './useWorkflowFeed.jsx';
@@ -77,6 +78,7 @@ export default function App() {
           <Tab value="tests" label="Tests" />
           <Tab value="priority" label="Priority" />
           <Tab value="workflow" label="Workflow" />
+          <Tab value="graph" label="Graph" />
         </TabList>
       </header>
 
@@ -97,6 +99,7 @@ export default function App() {
         {view === 'tests' && <TestsView items={items} onSelect={setSelectedId} />}
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
         {view === 'workflow' && <WorkflowView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'graph' && <GraphView />}
         {selected && detailOpen && (
           <>
             <div className="pane-resizer" onPointerDown={onDetailResize} />
