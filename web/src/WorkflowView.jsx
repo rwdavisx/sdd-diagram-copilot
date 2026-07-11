@@ -103,17 +103,25 @@ function NewIdeaForm({ onSelect }) {
   const create = async (brainstorm) => {
     setBusy(true);
     setError(null);
-    const r = await post('/api/items', { name, type, notes: idea });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) { setError(data.error || 'Failed to add item'); setBusy(false); return; }
-    setName(''); setIdea(''); setBusy(false);
-    if (!brainstorm) return;
-    const s = await post('/api/workflow/start', { itemId: data.id, step: 'brainstorm' });
-    if (!s.ok) {
-      const err = await s.json().catch(() => ({}));
-      setError(`"${data.id}" is in the backlog, but brainstorm couldn't start: ${err.error || 'unknown error'}`);
+    try {
+      const r = await post('/api/items', { name, type, notes: idea });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(data.error || 'Failed to add item'); return; }
+      setName(''); setIdea('');
+      if (!brainstorm) return;
+      const s = await post('/api/workflow/start', { itemId: data.id, step: 'brainstorm' });
+      if (!s.ok) {
+        const err = await s.json().catch(() => ({}));
+        // Stay on the form so the error stays visible; don't switch views.
+        setError(`"${data.id}" is in the backlog, but brainstorm couldn't start: ${err.error || 'unknown error'}`);
+        return;
+      }
+      onSelect(data.id);
+    } catch {
+      setError('Request failed — is the server running?');
+    } finally {
+      setBusy(false);
     }
-    onSelect(data.id);
   };
 
   return (
