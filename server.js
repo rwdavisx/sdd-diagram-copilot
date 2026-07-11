@@ -459,6 +459,24 @@ function main() {
       return sendJson(res, 200, computePriority(loadProject(args.yamlPath).items));
     }
 
+    if (url.pathname === '/api/graphify/status') {
+      return sendJson(res, 200, graphify.status(projectDir));
+    }
+
+    if (url.pathname === '/api/graphify/graph.html') {
+      return fs.readFile(graphify.paths(projectDir).html, (err, data) => {
+        if (err) return sendJson(res, 404, { error: 'No graph generated yet' });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(data);
+      });
+    }
+
+    if (url.pathname === '/api/graphify/regenerate' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      if (!graphify.available) return sendJson(res, 503, { error: 'graphify is not installed' });
+      return sendJson(res, 200, graphify.ensureGraphFresh(projectDir, { force: true }));
+    }
+
     if (url.pathname === '/api/workflow' && req.method === 'GET') {
       return sendJson(res, 200, { state: workflow.getState(), transcript: workflow.getTranscript(), steps: STEPS });
     }
