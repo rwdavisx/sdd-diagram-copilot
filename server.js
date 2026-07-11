@@ -504,6 +504,17 @@ function main() {
       }).catch(() => sendJson(res, 400, { error: 'Invalid request body' }));
     }
 
+    if (url.pathname === '/api/items' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      return readBody(req).then((body) => {
+        let fields = null;
+        try { fields = JSON.parse(body); } catch { /* handled below */ }
+        if (!fields || typeof fields !== 'object') return sendJson(res, 400, { error: 'Invalid request body' });
+        const r = addProjectItem(args.yamlPath, fields);
+        return r.error ? sendJson(res, 400, { error: r.error }) : sendJson(res, 200, r);
+      }).catch(() => sendJson(res, 400, { error: 'Invalid request body' }));
+    }
+
     if (url.pathname === '/api/spec') {
       const rel = url.searchParams.get('path') || '';
       const resolved = path.resolve(projectDir, rel);
