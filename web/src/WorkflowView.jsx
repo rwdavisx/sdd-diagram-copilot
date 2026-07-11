@@ -42,9 +42,10 @@ function Stepper({ state }) {
 
 // Item picker + optional starting-step choice (items with a spec can skip
 // straight to implementation). Project planning lives in the Design tab.
-function StartControls({ items, prompt }) {
-  const [pickedId, setPickedId] = useState('');
+// The picker IS the app-wide selection: picking here scopes the whole tab.
+function StartControls({ items, prompt, selectedId, onSelect }) {
   const [startAt, setStartAt] = useState('brainstorm');
+  const pickedId = selectedId || '';
   const picked = items.find((i) => i.id === pickedId);
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
@@ -55,7 +56,7 @@ function StartControls({ items, prompt }) {
         placeholder="Choose an item..."
         size="sm"
         value={pickedId}
-        onChange={(v) => { setPickedId(v); setStartAt('brainstorm'); }}
+        onChange={(v) => { onSelect(v); setStartAt('brainstorm'); }}
         options={items.map((i) => ({
           value: i.id,
           label: `${i.name} (${i.status}${i.spec ? ', has spec' : ', needs spec'})`,
@@ -104,7 +105,7 @@ const RUNNING_HINTS = {
 };
 const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning', gated: 'success' };
 
-export default function WorkflowView({ items }) {
+export default function WorkflowView({ items, selectedId, onSelect }) {
   const wf = useWorkflowFeed();
 
   if (!wf) return <div className="loading"><Spinner size="lg" /></div>;
@@ -113,6 +114,10 @@ export default function WorkflowView({ items }) {
   const gated = state?.stepStatus === 'gated';
   const nextStep = gated ? state.pipeline[state.pipeline.indexOf(state.step) + 1] : null;
   const item = state?.itemId ? items.find((i) => i.id === state.itemId) : null;
+  // The tab is scoped to the selected item: the run's state/transcript only
+  // shows when it belongs to the selection (or nothing is selected).
+  const selected = selectedId ? items.find((i) => i.id === selectedId) : null;
+  const showRun = !!state && (!selected || state.itemId === selected.id);
   // Shipped items stay startable — iterating on a finished feature just runs
   // the pipeline again (status flips back to in-progress while it's worked).
   const startable = items;
@@ -138,20 +143,33 @@ export default function WorkflowView({ items }) {
 
   return (
     <div className="workflow">
-      {!state && (
+      {!showRun && (
         <>
           <Stepper state={null} />
           <div className="wf-transcript">
             <EmptyState
-              title="No workflow yet"
-              description="Pick an item to take through the pipeline above. To plan the whole project first, use the Design tab."
-              actions={<StartControls items={startable} />}
-            />
+              title={selected ? `${selected.name} — no active session` : 'No workflow yet'}
+              description={selected
+                ? (selected.spec
+                  ? 'Has a spec — run the full pipeline, or start at Worktree to implement it.'
+                  : 'Needs a spec — take it through Brainstorm first.')
+                : 'Pick an item to take through the pipeline above. To plan the whole project first, use the Design tab.'}
+              actions={<StartControls items={startable} selectedId={selectedId} onSelect={onSelect} />}
+            >
+              {state && ['running', 'gated'].includes(state.stepStatus) && (
+                <Button
+                  label={`View the active session (${item ? item.name : 'project'})`}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onSelect(state.itemId || null)}
+                />
+              )}
+            </EmptyState>
           </div>
         </>
       )}
 
-      {state && (
+      {showRun && (
         <>
           <Stepper state={state} />
           <HStack gap={2} vAlign="center" wrap="wrap">
@@ -170,7 +188,7 @@ export default function WorkflowView({ items }) {
             {canRetry && <Button label={`Retry ${STEP_INFO[state.step]?.label || state.step}`} variant="primary" size="sm" onClick={retry} />}
             {state.error && <Text type="supporting" size="xsm">{state.error}</Text>}
           </HStack>
-          {!running && !gated && <StartControls items={startable} prompt="Start something else:" />}
+          {!running && !gated && <StartControls items={startable} selectedId={selectedId} onSelect={onSelect} prompt="Start something else:" />}
           <ChatLayout
             density="compact"
             className="wf-chat"

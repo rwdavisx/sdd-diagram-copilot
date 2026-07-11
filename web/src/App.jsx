@@ -35,6 +35,8 @@ export default function App() {
   }, []);
 
   const startWorkflow = useCallback((itemId) => {
+    // Select what we start so the Workflow tab opens scoped to it.
+    setSelectedId(itemId);
     fetch('/api/workflow/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -94,7 +96,7 @@ export default function App() {
         {view === 'schemas' && <SchemaView items={items} onSelect={setSelectedId} />}
         {view === 'tests' && <TestsView items={items} onSelect={setSelectedId} />}
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
-        {view === 'workflow' && <WorkflowView items={items} />}
+        {view === 'workflow' && <WorkflowView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
         {selected && detailOpen && (
           <>
             <div className="pane-resizer" onPointerDown={onDetailResize} />
