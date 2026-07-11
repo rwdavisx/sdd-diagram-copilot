@@ -334,7 +334,7 @@ items:
   - id: analyze-project-mode
     name: Analyze-codebase mode
     type: integration
-    status: in-progress
+    status: shipped
     spec: docs/superpowers/specs/2026-07-11-analyze-project-design.md
     depends: [workflow-orchestration, cli-init]
     notes: workflow.js ANALYZE_PIPELINE + analyzeProjectPrompt; reverse-engineers an existing repo into project.yaml via parallel Explore subagents; completes on .superpowers/analyze-report.md.
