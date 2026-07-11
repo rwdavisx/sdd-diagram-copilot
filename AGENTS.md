@@ -10,6 +10,11 @@ read-only by design).
 
 ```yaml
 project: My App            # display name
+workflow:                  # optional; which model/effort the Workflow tab's sessions use
+  defaults: { model: sonnet, effort: medium }    # any Claude Code alias or full model id; effort: low|medium|high|xhigh|max
+  steps:                   # per-step overrides (brainstorm|worktree|plan|execute|review|finish|plan-project|analyze-project)
+    execute: { model: claude-fable-5, effort: high }
+    worktree: { model: haiku, effort: low }
 items:
   - id: login-page         # required, unique, kebab-case, stable (never rename casually)
     name: Login Page       # required, human-readable
@@ -18,6 +23,7 @@ items:
     spec: docs/specs/login.md   # optional; path relative to this yaml file
     depends: [auth-api]    # optional; ids of items this item calls/uses
     notes: freeform text   # optional
+    workflow: { model: fable, effort: xhigh }   # optional; overrides workflow.steps/defaults for this item's sessions
     wireframe: design/wireframes/login-page.html  # optional; defaults to this convention path when the file exists
     flows:                 # optional; data movement this item initiates (drawn as labeled edges)
       - { to: users-db, kind: data, label: "user rows" }   # kind: nav | api | data (default data)
@@ -28,6 +34,10 @@ items:
         schema: |                  # free-form block — shape, fields, SQL, JSON, whatever reads best
           request:  { email: string, password: string }
           response: { token: string }
+    tests:                 # optional; the item's tests (Tests tab + pass/fail chip on its diagram node)
+      - name: rejects a bad password   # required
+        file: test/login.test.js       # optional
+        status: passing                # passing | failing | unknown (default unknown)
 ```
 
 The server validates on every load: unknown `type`/`status`, duplicate `id`s,
@@ -61,7 +71,10 @@ Keep the file valid.
    item's `contracts:` (name, kind, schema). When an item reads or writes
    another item's data outside of a wireframe interaction, add a `flows:` entry
    with a short label — this is what makes data movement visible on the diagram.
-7. **Don't edit the viewer's code to change project state.** State lives only
+7. **Record tests under the owning item's `tests:`.** When you write a test
+   for an item, add it (name, file, status); whenever you run tests, update
+   the statuses so the Tests tab and diagram chips reflect reality.
+8. **Don't edit the viewer's code to change project state.** State lives only
    in `project.yaml`.
 
 ## Wireframes
@@ -114,9 +127,14 @@ live-reloads when `project.yaml` changes.
 The viewer can also *drive* development: the Workflow tab runs headless
 Claude Code sessions through the superpowers pipeline (brainstorm → worktree
 → plan → execute → review → finish), one bounded session per step, with
-artifacts on disk as ground truth and automatic advance between steps. The
+artifacts on disk as ground truth. Each step ends at a gate: the human
+reviews the step's output and presses Continue before the next step starts —
+steps never auto-advance. The
 server updates `project.yaml` itself at the milestones (spec recorded after
 brainstorm, `in-progress` when execution starts, `shipped` when the branch
 merges) — agents running inside the workflow don't need to remember.
 "Plan project" starts a chat that interviews the human and fills
-`project.yaml` with planned items.
+`project.yaml` with planned items. "Analyze codebase" is its inverse for
+existing repos: agents explore the code in parallel, deconstruct it into
+items (with depends, contracts, flows, and tests), and fill `project.yaml`
+with what's already built, marked `shipped`.

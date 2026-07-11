@@ -6,7 +6,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Markdown } from '@astryxdesign/core/Markdown';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { TypeBadge, STATUS_VARIANT } from './chips.jsx';
+import { TypeBadge, TestChip, STATUS_VARIANT, TEST_STATUS_VARIANT } from './chips.jsx';
 
 const WF_W = 800; // wireframes are authored at 800px
 
@@ -14,37 +14,53 @@ const WF_W = 800; // wireframes are authored at 800px
 // the diagram only shows a thumbnail, this is where you actually read it.
 function WireframeViewer({ item, panelWidth }) {
   const ref = useRef(null);
-  const [contentH, setContentH] = useState(600);
-  const scale = Math.max(0.2, (panelWidth - 34) / WF_W);
+  // Wireframes are authored at 800px by convention but sometimes overflow it;
+  // render at the measured content width so nothing is cropped on the right.
+  const [dim, setDim] = useState({ w: WF_W, h: 600 });
+  const scale = Math.max(0.2, (panelWidth - 34) / dim.w);
 
   const measure = () => {
     const doc = ref.current?.contentDocument;
-    if (!doc) return;
-    // body height alone under-reports when content overflows — the cause of
-    // wireframes rendering chopped off in the old in-node approach.
-    setContentH(Math.max(
-      doc.body?.scrollHeight || 0,
-      doc.documentElement?.scrollHeight || 0,
-      Math.ceil(doc.body?.getBoundingClientRect().height || 0),
-    ) + 16);
+    if (!doc?.body) return;
+    // Freeze the body at the 800px design width (100%-width rows would
+    // otherwise reflow when the iframe widens) and pin heights to content-
+    // driven sizing so measuring can't feed back into the iframe dimensions.
+    // scrollWidth misses overflow inside clipping ancestors; bounding rects
+    // don't — scan for the true extent. Scrollbars: scrolling="no".
+    doc.documentElement.style.height = 'auto';
+    doc.body.style.height = 'auto';
+    doc.body.style.width = `${WF_W}px`;
+    doc.body.style.margin = '0'; // a centered body would slide right as the iframe widens
+    let maxR = WF_W;
+    let maxB = 0;
+    for (const el of doc.body.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.right > maxR) maxR = r.right;
+      if (r.bottom > maxB) maxB = r.bottom;
+    }
+    setDim({
+      w: Math.min(Math.ceil(maxR) + 8, 1600),
+      h: Math.ceil(Math.max(maxB, doc.body.getBoundingClientRect().height)) + 16,
+    });
   };
 
   return (
-    <div className="wf-viewer" style={{ height: contentH * scale }}>
+    <div className="wf-viewer" style={{ height: dim.h * scale }}>
       <iframe
         key={item.wfrev}
         ref={ref}
         src={'/' + item.wireframe}
         sandbox="allow-same-origin"
+        scrolling="no"
         title={item.name}
         onLoad={measure}
-        style={{ width: WF_W, height: contentH, transform: `scale(${scale})`, transformOrigin: 'top left', border: 0, pointerEvents: 'none' }}
+        style={{ width: dim.w, height: dim.h, transform: `scale(${scale})`, transformOrigin: 'top left', border: 0, pointerEvents: 'none' }}
       />
     </div>
   );
 }
 
-export default function DetailPanel({ item, items, width, onSelect, onClose, onStartWorkflow }) {
+export default function DetailPanel({ item, items, width, onSelect, onClose, onCollapse, onStartWorkflow }) {
   const [spec, setSpec] = useState(null); // { text } | { error } | null while loading
 
   useEffect(() => {
@@ -69,18 +85,24 @@ export default function DetailPanel({ item, items, width, onSelect, onClose, onS
         <HStack gap={2} vAlign="center">
           <Text type="large" weight="bold">{item.name}</Text>
           <div style={{ marginLeft: 'auto' }}>
-            <Button label="Close" icon={<span>×</span>} isIconOnly variant="ghost" size="sm" onClick={onClose} />
+            <HStack gap={1}>
+              {onCollapse && <Button label="Collapse" tooltip="Collapse panel" icon={<span>»</span>} isIconOnly variant="ghost" size="sm" onClick={onCollapse} />}
+              <Button label="Close" icon={<span>×</span>} isIconOnly variant="ghost" size="sm" onClick={onClose} />
+            </HStack>
           </div>
         </HStack>
         <HStack gap={2} vAlign="center">
           <TypeBadge type={item.type} />
           <Badge variant={STATUS_VARIANT[item.status]} label={item.status} />
         </HStack>
-        {item.status !== 'shipped' && (
-          <HStack>
-            <Button label="Start workflow" variant="primary" size="sm" onClick={() => onStartWorkflow(item.id)} />
-          </HStack>
-        )}
+        <HStack>
+          <Button
+            label={item.status === 'shipped' ? 'Iterate — run workflow again' : 'Start workflow'}
+            variant="primary"
+            size="sm"
+            onClick={() => onStartWorkflow(item.id)}
+          />
+        </HStack>
 
         {item.notes && <Text type="supporting" as="p">{item.notes}</Text>}
 
@@ -112,6 +134,22 @@ export default function DetailPanel({ item, items, width, onSelect, onClose, onS
                 <Button key={i.id} label={i.name} variant="secondary" size="sm" onClick={() => onSelect(i.id)} />
               ))}
             </HStack>
+          </VStack>
+        )}
+
+        {Array.isArray(item.tests) && item.tests.length > 0 && (
+          <VStack gap={1}>
+            <HStack gap={2} vAlign="center">
+              <Text type="label">Tests</Text>
+              <TestChip tests={item.tests} />
+            </HStack>
+            {item.tests.map((t, i) => (
+              <HStack key={i} gap={2} vAlign="center" wrap="wrap">
+                <Badge variant={TEST_STATUS_VARIANT[t.status] || 'neutral'} label={t.status || 'unknown'} />
+                <Text>{t.name}</Text>
+                {t.file && <Text type="code">{t.file}</Text>}
+              </HStack>
+            ))}
           </VStack>
         )}
 

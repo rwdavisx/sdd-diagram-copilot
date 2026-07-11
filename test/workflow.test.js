@@ -60,13 +60,35 @@ beforeEach(() => {
   merged = [];
 });
 
-test('start rejects unknown, shipped, and specless late-start items', () => {
+test('assistant-delta is broadcast live but never stored in the transcript', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  lastSession().args.onEvent({ kind: 'assistant-delta', text: 'He' });
+  assert.ok(broadcasts.some((b) => b.kind === 'assistant-delta' && b.text === 'He'));
+  assert.ok(!wf.getTranscript().some((ev) => ev.kind === 'assistant-delta'));
+});
+
+test('transcript events carry an ISO timestamp', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  const ev = wf.getTranscript()[0];
+  assert.ok(ev.at && !Number.isNaN(Date.parse(ev.at)));
+});
+
+test('start rejects unknown and specless late-start items', () => {
   const wf = makeWorkflow();
   assert.strictEqual(wf.start('nope').code, 400);
-  assert.strictEqual(wf.start('feat-b').code, 400);
   assert.strictEqual(wf.start('feat-a', 'worktree').code, 400); // no spec
   assert.strictEqual(wf.start('feat-a', 'bogus').code, 400);
   assert.strictEqual(sessions.length, 0);
+});
+
+test('shipped items can start a new workflow (iterate) and flip back to in-progress', () => {
+  const wf = makeWorkflow();
+  const { state } = wf.start('feat-b'); // feat-b is shipped
+  assert.strictEqual(state.step, 'brainstorm');
+  assert.strictEqual(state.stepStatus, 'running');
+  assert.deepStrictEqual(updates[0], ['feat-b', { status: 'in-progress' }]);
 });
 
 test('start spawns a brainstorm session and persists running state', () => {
@@ -88,18 +110,46 @@ test('start returns 409 while a workflow is running', () => {
   assert.strictEqual(wf.start('feat-a').code, 409);
 });
 
-test('brainstorm completion records the spec and auto-advances to worktree', () => {
+test('brainstorm completion records the spec and gates before worktree', () => {
   const wf = makeWorkflow();
   wf.start('feat-a');
   writeArtifact('specs/feat-a.md', '# spec');
   turnEnd();
-  assert.deepStrictEqual(updates, [['feat-a', { spec: 'specs/feat-a.md' }]]);
+  // starting brainstorm flips the status, then completion records the spec
+  assert.deepStrictEqual(updates, [
+    ['feat-a', { status: 'in-progress' }],
+    ['feat-a', { spec: 'specs/feat-a.md' }],
+  ]);
   assert.strictEqual(wf.getState().steps.brainstorm, 'done');
+  assert.strictEqual(wf.getState().step, 'brainstorm'); // parked at the gate
+  assert.strictEqual(wf.getState().stepStatus, 'gated');
+  assert.strictEqual(sessions.length, 1);
+  assert.strictEqual(sessions[0].closed, true);
+
+  wf.advance();
   assert.strictEqual(wf.getState().step, 'worktree');
   assert.strictEqual(wf.getState().stepStatus, 'running');
   assert.strictEqual(sessions.length, 2);
   assert.match(lastSession().args.initialPrompt, /using-git-worktrees/);
-  assert.strictEqual(sessions[0].closed, true);
+});
+
+test('advance is rejected unless a step is waiting at a gate', () => {
+  const wf = makeWorkflow();
+  assert.strictEqual(wf.advance().code, 409); // no workflow at all
+  wf.start('feat-a');
+  assert.strictEqual(wf.advance().code, 409); // still running
+});
+
+test('a gated workflow survives a restart and can be advanced', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  writeArtifact('specs/feat-a.md', '# spec');
+  turnEnd();
+  const wf2 = makeWorkflow(); // fresh server process
+  assert.strictEqual(wf2.getState().stepStatus, 'gated');
+  wf2.advance();
+  assert.strictEqual(wf2.getState().step, 'worktree');
+  assert.strictEqual(wf2.getState().stepStatus, 'running');
 });
 
 test('a stale spec file does not complete a fresh brainstorm', () => {
@@ -120,6 +170,7 @@ test('worktree completion captures the path and later steps run inside it', () =
   assert.strictEqual(wf.getState().steps.brainstorm, 'skipped');
   worktrees = [{ path: path.join(dir, '.wt', 'feat-c'), branch: 'feat-c' }];
   turnEnd();
+  wf.advance();
   assert.strictEqual(wf.getState().worktreePath, worktrees[0].path);
   assert.strictEqual(wf.getState().step, 'plan');
   assert.strictEqual(lastSession().args.cwd, worktrees[0].path);
@@ -128,16 +179,22 @@ test('worktree completion captures the path and later steps run inside it', () =
 function advanceToExecute(wf) {
   wf.start('feat-c', 'worktree');
   worktrees = [{ path: dir, branch: 'feat-c' }]; // reuse tmp dir as "worktree"
-  turnEnd(); // worktree -> plan
+  turnEnd(); wf.advance(); // worktree -> plan
   writeArtifact('docs/superpowers/plans/feat-c.md', '# plan');
-  turnEnd(); // plan -> execute
+  turnEnd(); wf.advance(); // plan -> execute
 }
 
-test('execute marks the item in-progress and completes only on a DONE progress file', () => {
+test('starting any step marks a planned item in-progress', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a'); // starts at brainstorm — not just execute
+  assert.deepStrictEqual(updates[0], ['feat-a', { status: 'in-progress' }]);
+});
+
+test('execute completes only on a DONE progress file', () => {
   const wf = makeWorkflow();
   advanceToExecute(wf);
   assert.strictEqual(wf.getState().step, 'execute');
-  assert.deepStrictEqual(updates.at(-1), ['feat-c', { status: 'in-progress' }]);
+  assert.ok(updates.some(([id, f]) => id === 'feat-c' && f.status === 'in-progress'));
 
   writeArtifact('.superpowers/sdd/progress.md', 'Task 1: complete\n'); // no DONE yet
   turnEnd();
@@ -145,6 +202,8 @@ test('execute marks the item in-progress and completes only on a DONE progress f
 
   writeArtifact('.superpowers/sdd/progress.md', 'Task 1: complete\nDONE\n');
   turnEnd();
+  assert.strictEqual(wf.getState().stepStatus, 'gated');
+  wf.advance();
   assert.strictEqual(wf.getState().step, 'review');
 });
 
@@ -152,9 +211,9 @@ test('finish completes when the worktree is gone; merged branches ship the item'
   const wf = makeWorkflow();
   advanceToExecute(wf);
   writeArtifact('.superpowers/sdd/progress.md', 'DONE');
-  turnEnd(); // -> review
+  turnEnd(); wf.advance(); // -> review
   writeArtifact('.superpowers/review-feat-c.md', 'clean');
-  turnEnd(); // -> finish
+  turnEnd(); wf.advance(); // -> finish
   assert.strictEqual(wf.getState().step, 'finish');
 
   turnEnd(); // worktree still listed -> not complete
@@ -171,9 +230,9 @@ test('finish on a discarded (unmerged) branch does not ship the item', () => {
   const wf = makeWorkflow();
   advanceToExecute(wf);
   writeArtifact('.superpowers/sdd/progress.md', 'DONE');
-  turnEnd();
+  turnEnd(); wf.advance();
   writeArtifact('.superpowers/review-feat-c.md', 'clean');
-  turnEnd();
+  turnEnd(); wf.advance();
   worktrees = [];
   turnEnd(); // not merged
   assert.strictEqual(wf.getState().stepStatus, 'done');
@@ -224,6 +283,40 @@ test('plan-project stop without yaml changes just stops', () => {
   assert.strictEqual(wf.getState().stepStatus, 'stopped');
 });
 
+test('analyze-project completes at turn-end once the report artifact appears', () => {
+  const wf = makeWorkflow();
+  const { state } = wf.analyzeProject();
+  assert.deepStrictEqual(state.pipeline, ['analyze-project']);
+  assert.match(lastSession().args.initialPrompt, /reverse-engineer/i);
+  turnEnd();
+  assert.strictEqual(wf.getState().stepStatus, 'running'); // no report yet
+  writeArtifact('.superpowers/analyze-report.md', 'report');
+  turnEnd();
+  assert.strictEqual(wf.getState().stepStatus, 'done');
+});
+
+test('analyze-project completes on stop when project.yaml was modified', () => {
+  const wf = makeWorkflow();
+  wf.analyzeProject();
+  writeArtifact('project.yaml', 'project: x\nitems: []\n');
+  wf.stop();
+  assert.strictEqual(wf.getState().stepStatus, 'done');
+});
+
+test('analyze-project stop without yaml changes just stops', () => {
+  const wf = makeWorkflow();
+  wf.analyzeProject();
+  wf.stop();
+  assert.strictEqual(wf.getState().stepStatus, 'stopped');
+});
+
+test('analyze-project rejects a second concurrent workflow', () => {
+  const wf = makeWorkflow();
+  wf.analyzeProject();
+  assert.strictEqual(wf.analyzeProject().code, 409);
+  assert.strictEqual(wf.start('feat-a').code, 409);
+});
+
 test('input echoes user-text and forwards to the session', () => {
   const wf = makeWorkflow();
   wf.start('feat-a');
@@ -246,11 +339,43 @@ test('late events from a superseded run or step are ignored', async () => {
   wf.start('feat-a');
   const oldSession = lastSession();
   writeArtifact('specs/feat-a.md', '# spec');
-  turnEnd(); // brainstorm done -> worktree running (new session)
+  turnEnd(); wf.advance(); // brainstorm done -> worktree running (new session)
   const before = JSON.stringify(wf.getState());
 
   oldSession.args.onEvent({ kind: 'turn-end', ok: true, costUsd: 0 }); // stale step event
   oldSession.finish({ ok: true, sessionId: 's1' });
   await new Promise((r) => setImmediate(r));
   assert.strictEqual(JSON.stringify(wf.getState()), before);
+});
+
+// ---------- per-step model/effort config ----------
+
+const { resolveStepConfig } = require('../workflow');
+
+test('resolveStepConfig merges defaults < step < item override', () => {
+  const cfg = {
+    defaults: { model: 'sonnet', effort: 'medium' },
+    steps: { execute: { model: 'claude-fable-5', effort: 'high' }, review: { effort: 'low' } },
+  };
+  assert.deepStrictEqual(resolveStepConfig(cfg, 'brainstorm', {}), { model: 'sonnet', effort: 'medium' });
+  assert.deepStrictEqual(resolveStepConfig(cfg, 'execute', {}), { model: 'claude-fable-5', effort: 'high' });
+  assert.deepStrictEqual(resolveStepConfig(cfg, 'review', {}), { model: 'sonnet', effort: 'low' });
+  assert.deepStrictEqual(
+    resolveStepConfig(cfg, 'execute', { workflow: { model: 'haiku' } }),
+    { model: 'haiku', effort: 'high' },
+  );
+  assert.deepStrictEqual(resolveStepConfig(null, 'execute', null), { model: undefined, effort: undefined });
+});
+
+test('startStep passes resolved model/effort to runSession', () => {
+  const wf = createWorkflow({
+    projectDir: dir,
+    loadItems: () => ITEMS,
+    loadWorkflowConfig: () => ({ defaults: { model: 'sonnet' }, steps: { brainstorm: { effort: 'high' } } }),
+    runSession: fakeRunSession,
+    broadcast: () => {},
+  });
+  wf.start('feat-a');
+  assert.strictEqual(lastSession().args.model, 'sonnet');
+  assert.strictEqual(lastSession().args.effort, 'high');
 });

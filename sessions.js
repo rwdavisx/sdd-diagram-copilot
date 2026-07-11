@@ -52,6 +52,17 @@ function toUiEvents(msg) {
   if (msg.type === 'system' && msg.subtype === 'init') {
     return [{ kind: 'session-start', sessionId: msg.session_id, model: msg.model }];
   }
+  if (msg.type === 'stream_event') {
+    // Live text deltas; the full assistant message still follows and is the
+    // durable record. Subagent streams are skipped — parallel subagents would
+    // interleave scrambled text into the one live bubble.
+    if (msg.parent_tool_use_id) return [];
+    const ev = msg.event;
+    if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
+      return [{ kind: 'assistant-delta', text: ev.delta.text }];
+    }
+    return [];
+  }
   if (msg.type === 'assistant') {
     const events = [];
     for (const block of (msg.message && msg.message.content) || []) {
@@ -76,7 +87,7 @@ async function defaultQueryFn(args) {
 
 // Start a headless Claude Code session with streaming input. The session
 // stays alive across turns until close() (or an SDK error) ends it.
-function startSession({ initialPrompt, cwd, resume, onEvent, queryFn = defaultQueryFn }) {
+function startSession({ initialPrompt, cwd, resume, model, effort, onEvent, queryFn = defaultQueryFn }) {
   const input = createInputQueue();
   input.push(userMessage(initialPrompt));
   let q = null;
@@ -89,6 +100,11 @@ function startSession({ initialPrompt, cwd, resume, onEvent, queryFn = defaultQu
         options: {
           cwd,
           resume,
+          // Per-step model/effort from project.yaml `workflow:`; unset fields
+          // fall back to the CLI's default model and effort.
+          ...(model ? { model } : {}),
+          ...(effort ? { effort } : {}),
+          includePartialMessages: true,
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
           systemPrompt: { type: 'preset', preset: 'claude_code' },

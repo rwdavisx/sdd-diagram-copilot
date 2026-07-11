@@ -51,3 +51,24 @@ test('returns false for an unknown item and leaves the file alone', () => {
   assert.strictEqual(updateProjectItem(file, 'nope', { status: 'shipped' }), false);
   assert.strictEqual(fs.readFileSync(file, 'utf8'), YAML);
 });
+
+const { planInfo } = require('../server');
+
+test('planInfo counts plan checkboxes, preferring the active worktree copy', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-'));
+  const item = { id: 'feat-a' };
+  assert.strictEqual(planInfo(dir, null, item), null); // no plan file
+
+  const plansDir = path.join(dir, 'docs', 'superpowers', 'plans');
+  fs.mkdirSync(plansDir, { recursive: true });
+  fs.writeFileSync(path.join(plansDir, 'feat-a.md'), '# Plan\n- [x] task one\n- [ ] task two\n- [X] task three\n');
+  assert.deepStrictEqual(planInfo(dir, null, item), { tasks: 3, done: 2 });
+
+  // active worktree copy wins while the item is mid-pipeline
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-'));
+  const wtPlans = path.join(wt, 'docs', 'superpowers', 'plans');
+  fs.mkdirSync(wtPlans, { recursive: true });
+  fs.writeFileSync(path.join(wtPlans, 'feat-a.md'), '- [x] a\n- [x] b\n');
+  const wfState = { itemId: 'feat-a', worktreePath: wt };
+  assert.deepStrictEqual(planInfo(dir, wfState, item), { tasks: 2, done: 2 });
+});

@@ -13,6 +13,7 @@ const { startSession } = require('./sessions');
 
 const TYPES = ['frontend', 'backend', 'integration'];
 const STATUSES = ['planned', 'in-progress', 'shipped'];
+const TEST_STATUSES = ['passing', 'failing', 'unknown'];
 
 function parseArgs(argv) {
   const args = { port: 4400, yamlPath: null, open: true, init: false };
@@ -56,7 +57,7 @@ function initProject(yamlPath) {
     made.push('.gitignore (.superpowers/ entry)');
   }
   console.log(made.length ? `Initialized: ${made.join(', ')}` : 'Already initialized — nothing to do.');
-  console.log('Open the dashboard, hit the Workflow tab, and use "Plan project" to plan what you want to build.');
+  console.log('Open the dashboard\'s Design tab: "Plan project" to plan something new, or "Analyze codebase" to reverse-engineer an existing repo into the blueprint.');
 }
 
 function loadProject(yamlPath) {
@@ -88,6 +89,16 @@ function loadProject(yamlPath) {
       if (!Array.isArray(item.contracts)) errors.push(`Item ${label}: contracts must be a list`);
       else for (const c of item.contracts) {
         if (!c || typeof c !== 'object' || !c.name) errors.push(`Item ${label}: each contract needs a name`);
+      }
+    }
+    if (item.tests != null) {
+      if (!Array.isArray(item.tests)) errors.push(`Item ${label}: tests must be a list`);
+      else for (const t of item.tests) {
+        if (!t || typeof t !== 'object' || !t.name) { errors.push(`Item ${label}: each test needs a name`); continue; }
+        if (t.status == null) t.status = 'unknown';
+        else if (!TEST_STATUSES.includes(t.status)) {
+          errors.push(`Item ${label}: test "${t.name}" has unknown status "${t.status}" (expected ${TEST_STATUSES.join(' | ')})`);
+        }
       }
     }
   }
@@ -127,7 +138,14 @@ function loadProject(yamlPath) {
       }
     }
   }
-  return { project: doc.project || path.basename(path.dirname(yamlPath)), items, errors };
+  // Optional per-step session config: workflow.defaults / workflow.steps.<id>,
+  // each { model, effort }; items may also carry their own `workflow:` override.
+  let workflow = null;
+  if (doc.workflow != null) {
+    if (typeof doc.workflow === 'object' && !Array.isArray(doc.workflow)) workflow = doc.workflow;
+    else errors.push('`workflow` must be a mapping ({ defaults, steps })');
+  }
+  return { project: doc.project || path.basename(path.dirname(yamlPath)), items, workflow, errors };
 }
 
 // Element-anchored flows are declared inside the wireframe HTML itself:
@@ -276,6 +294,23 @@ function updateProjectItem(yamlPath, itemId, fields) {
   return true;
 }
 
+// Plan progress for an item: read docs/superpowers/plans/<id>.md — from the
+// active worktree while the item is mid-pipeline (the plan lives on the
+// branch until merge), else the project dir — and count markdown checkboxes.
+function planInfo(projectDir, wfState, item) {
+  const dirs = [];
+  if (wfState && wfState.itemId === item.id && wfState.worktreePath) dirs.push(wfState.worktreePath);
+  dirs.push(projectDir);
+  for (const d of dirs) {
+    let text;
+    try { text = fs.readFileSync(path.join(d, 'docs', 'superpowers', 'plans', `${item.id}.md`), 'utf8'); } catch { continue; }
+    const tasks = (text.match(/^\s*[-*] \[[ xX]\]/gm) || []).length;
+    const done = (text.match(/^\s*[-*] \[[xX]\]/gm) || []).length;
+    return { tasks, done };
+  }
+  return null;
+}
+
 // Rejects cross-origin POSTs (LAN/CSRF) while allowing same-origin and
 // no-Origin requests (curl, same-origin fetches that omit it).
 function originAllowed(req, port) {
@@ -318,6 +353,7 @@ function main() {
   const workflow = createWorkflow({
     projectDir,
     loadItems: () => loadProject(args.yamlPath).items,
+    loadWorkflowConfig: () => loadProject(args.yamlPath).workflow,
     runSession: startSession,
     updateItem: (itemId, fields) => updateProjectItem(args.yamlPath, itemId, fields),
     broadcast: (ev) => {
@@ -361,7 +397,9 @@ function main() {
     if (url.pathname === '/api/project') {
       const proj = loadProject(args.yamlPath);
       const wf = loadWireframes(projectDir, proj.items);
-      return sendJson(res, 200, { ...proj, errors: [...proj.errors, ...wf.errors], flows: wf.flows });
+      const wfState = workflow.getState();
+      const items = proj.items.map((i) => (i && i.id ? { ...i, plan: planInfo(projectDir, wfState, i) } : i));
+      return sendJson(res, 200, { ...proj, items, errors: [...proj.errors, ...wf.errors], flows: wf.flows });
     }
 
     if (url.pathname === '/api/priority') {
@@ -386,6 +424,18 @@ function main() {
     if (url.pathname === '/api/workflow/plan-project' && req.method === 'POST') {
       if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
       const r = workflow.planProject();
+      return r.error ? sendJson(res, r.code, { error: r.error }) : sendJson(res, 200, r.state);
+    }
+
+    if (url.pathname === '/api/workflow/analyze-project' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      const r = workflow.analyzeProject();
+      return r.error ? sendJson(res, r.code, { error: r.error }) : sendJson(res, 200, r.state);
+    }
+
+    if (url.pathname === '/api/workflow/continue' && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      const r = workflow.advance();
       return r.error ? sendJson(res, r.code, { error: r.error }) : sendJson(res, 200, r.state);
     }
 
@@ -477,4 +527,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { loadProject, computePriority, updateProjectItem, parseWireframeFlows, loadWireframes };
+module.exports = { loadProject, computePriority, updateProjectItem, parseWireframeFlows, loadWireframes, planInfo };

@@ -4,19 +4,21 @@ import { Button } from '@astryxdesign/core/Button';
 import { ChatComposer, ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Spinner } from '@astryxdesign/core/Spinner';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { post, useWorkflowFeed, TranscriptEvent } from './useWorkflowFeed.jsx';
-import { usePaneWidth } from './resize.jsx';
+import { post, useWorkflowFeed, Transcript } from './useWorkflowFeed.jsx';
+import { usePaneWidth, usePersistedOpen } from './resize.jsx';
 import DiagramView from './DiagramView.jsx';
 
 const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning' };
 
-export default function PlanningView({ items, flows, selectedId, onSelect }) {
+export default function DesignView({ items, flows, selectedId, onSelect }) {
   const wf = useWorkflowFeed();
   const [startError, setStartError] = useState(null);
   const [iterateOn, setIterateOn] = useState(null); // item id the chat is focused on
-  const [chatW, onResizeDown] = usePaneWidth('dc-planning-chat-w', 400, { min: 300, max: 760 });
+  const [chatW, onResizeDown] = usePaneWidth('dc-design-chat-w', 400, { min: 300, max: 760 });
+  const [chatOpen, toggleChat] = usePersistedOpen('dc-design-chat-open');
 
   // Selecting a frontend screen on the canvas focuses the chat on it.
   useEffect(() => {
@@ -25,12 +27,13 @@ export default function PlanningView({ items, flows, selectedId, onSelect }) {
   }, [selectedId, items]);
 
   const state = wf?.state;
-  const isPlanning = state?.pipeline?.[0] === 'plan-project';
+  const pipeline = state?.pipeline?.[0];
+  const isPlanning = pipeline === 'plan-project' || pipeline === 'analyze-project';
   const running = isPlanning && state.stepStatus === 'running';
 
-  const start = () => {
+  const start = (kind) => {
     setStartError(null);
-    post('/api/workflow/plan-project').then((r) => {
+    post(`/api/workflow/${kind}`).then((r) => {
       if (!r.ok) setStartError('A workflow is already running — stop it in the Workflow tab first.');
     });
   };
@@ -62,16 +65,41 @@ export default function PlanningView({ items, flows, selectedId, onSelect }) {
     </VStack>
   );
 
+  const activeWorkflow = state && state.itemId && ['running', 'gated'].includes(state.stepStatus)
+    ? { itemId: state.itemId, step: state.step, stepStatus: state.stepStatus }
+    : null;
+
+  if (!chatOpen) {
+    return (
+      <div className="design">
+        <div className="pane-rail pane-rail-left">
+          <Button label="Open chat" tooltip="Open chat" isIconOnly variant="ghost" size="sm" icon={<span>»</span>} onClick={toggleChat} />
+        </div>
+        <div className="design-canvas">
+          <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} active={activeWorkflow} />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="planning">
-      <div className="planning-chat" style={{ width: chatW }}>
-        {!wf && <div className="loading">Loading…</div>}
+    <div className="design">
+      <div className="design-chat" style={{ width: chatW }}>
+        <div className="pane-collapse">
+          <Button label="Collapse chat" tooltip="Collapse chat" isIconOnly variant="ghost" size="sm" icon={<span>«</span>} onClick={toggleChat} />
+        </div>
+        {!wf && <div className="loading"><Spinner size="lg" /></div>}
 
         {wf && !isPlanning && (
           <EmptyState
-            title="Plan your project"
-            description="Claude interviews you about what you want to build — screens, features, and integrations land in project.yaml and appear on the diagram as you talk."
-            actions={<Button label="Plan project" variant="primary" size="sm" onClick={start} />}
+            title="Design your project"
+            description="Plan project: Claude interviews you about what you want to build. Analyze codebase: agents reverse-engineer an existing repo. Either way, items land in project.yaml and appear on the diagram live."
+            actions={
+              <HStack gap={1}>
+                <Button label="Plan project" variant="primary" size="sm" onClick={() => start('plan-project')} />
+                <Button label="Analyze codebase" size="sm" onClick={() => start('analyze-project')} />
+              </HStack>
+            }
           >
             {startError && <Text type="supporting" size="xsm">{startError}</Text>}
           </EmptyState>
@@ -80,23 +108,23 @@ export default function PlanningView({ items, flows, selectedId, onSelect }) {
         {wf && isPlanning && (
           <>
             <HStack gap={2} vAlign="center" wrap="wrap">
-              <Text weight="bold">Project planning</Text>
+              <Text weight="bold">{pipeline === 'analyze-project' ? 'Codebase analysis' : 'Project planning'}</Text>
               <Badge variant={STATUS_BADGE[state.stepStatus] || 'neutral'} label={state.stepStatus} />
               {running
                 ? <Button label="Stop" variant="ghost" size="sm" onClick={() => post('/api/workflow/stop')} />
-                : <Button label="Plan again" size="sm" onClick={start} />}
+                : <Button label={pipeline === 'analyze-project' ? 'Analyze again' : 'Plan again'} size="sm" onClick={() => start(pipeline)} />}
             </HStack>
             <ChatLayout density="compact" className="wf-chat" composer={composer}>
               <ChatMessageList density="compact">
-                {wf.transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
+                <Transcript transcript={wf.transcript} pending={wf.pending} running={running} />
               </ChatMessageList>
             </ChatLayout>
           </>
         )}
       </div>
       <div className="pane-resizer" onPointerDown={onResizeDown} />
-      <div className="planning-canvas">
-        <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} />
+      <div className="design-canvas">
+        <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} active={activeWorkflow} />
       </div>
     </div>
   );

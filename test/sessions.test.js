@@ -69,6 +69,33 @@ test('toUiEvents: irrelevant messages produce nothing', () => {
   assert.deepStrictEqual(toUiEvents(null), []);
 });
 
+test('toUiEvents: stream_event text delta -> assistant-delta', () => {
+  const events = toUiEvents({
+    type: 'stream_event',
+    parent_tool_use_id: null,
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hel' } },
+  });
+  assert.deepStrictEqual(events, [{ kind: 'assistant-delta', text: 'Hel' }]);
+});
+
+test('toUiEvents: subagent and non-text stream events produce nothing', () => {
+  assert.deepStrictEqual(toUiEvents({
+    type: 'stream_event',
+    parent_tool_use_id: 'toolu_1',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } },
+  }), []);
+  assert.deepStrictEqual(toUiEvents({
+    type: 'stream_event',
+    parent_tool_use_id: null,
+    event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'x' } },
+  }), []);
+  assert.deepStrictEqual(toUiEvents({
+    type: 'stream_event',
+    parent_tool_use_id: null,
+    event: { type: 'content_block_start', content_block: { type: 'text', text: '' } },
+  }), []);
+});
+
 const { startSession } = require('../sessions');
 
 function fakeQueryFn(messages, { onPrompt } = {}) {

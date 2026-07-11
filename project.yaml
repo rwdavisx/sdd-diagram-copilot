@@ -1,21 +1,87 @@
-name: diagram-copilot
+project: diagram-copilot
 description: Spec-driven development workbench - visualize project.yaml and drive the superpowers workflow
 
 items:
+  # ---- frontend screens ----
+  - id: app-shell
+    name: App shell + tabs
+    type: frontend
+    status: shipped
+    notes: web/src/App.jsx tab container + DetailPanel overlay; shared SSE singleton in web/src/useWorkflowFeed.jsx, chips.jsx badges, resize.jsx panes; Vite 8 + React 19 build in web/.
+    flows:
+      - { to: plan-project-mode, kind: api, label: "start item workflow" }
+
+  - id: design-view
+    name: Design tab (planning chat + canvas)
+    type: frontend
+    status: shipped
+    depends: [app-shell, diagram-view, plan-project-mode, analyze-project-mode]
+    notes: web/src/DesignView.jsx; landing tab, split pane of planning chat and embedded architecture diagram; starts plan-project/analyze-project chats.
+
+  - id: diagram-view
+    name: Architecture diagram canvas
+    type: frontend
+    status: shipped
+    depends: [app-shell]
+    notes: web/src/DiagramView.jsx; react-flow (@xyflow/react 12) + dagre layout, wireframe thumbnails in nodes via iframe, bundled labeled flow edges.
+
+  - id: board-view
+    name: Board tab (kanban)
+    type: frontend
+    status: shipped
+    depends: [app-shell]
+    notes: web/src/BoardView.jsx; items grouped by planned/in-progress/shipped, pure render of /api/project items.
+
+  - id: schema-view
+    name: Schemas tab
+    type: frontend
+    status: shipped
+    depends: [app-shell]
+    notes: web/src/SchemaView.jsx; browses item contracts (api/db/event) grouped by owning item, pure render.
+
+  - id: tests-view
+    name: Tests tab
+    type: frontend
+    status: shipped
+    depends: [app-shell]
+    notes: web/src/TestsView.jsx; all recorded tests grouped by item with pass/fail rollup, pure render.
+
+  - id: priority-view
+    name: Priority tab
+    type: frontend
+    status: shipped
+    depends: [app-shell]
+    notes: web/src/PriorityView.jsx; ranked ready/blocked work list with per-item Start workflow button.
+
+  - id: workflow-view
+    name: Workflow tab (stepper + transcript)
+    type: frontend
+    status: shipped
+    depends: [app-shell, workflow-orchestration]
+    notes: web/src/WorkflowView.jsx; pipeline stepper, live chat transcript (non-durable), start/continue/stop/input controls.
+
+  - id: detail-panel
+    name: Item detail panel
+    type: frontend
+    status: shipped
+    depends: [app-shell]
+    notes: web/src/DetailPanel.jsx; slide-out for selected item, renders spec markdown via /api/spec and full wireframe iframe.
+
+  # ---- backend / integration (being refined) ----
   - id: workflow-session-runner
     name: Workflow session runner + chat
     type: integration
     status: shipped
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
-    notes: Agent SDK integration, SSE relay, input endpoint, Workflow tab with transcript + chat, start + brainstorm step.
+    notes: sessions.js; Agent SDK integration, SSE relay, input queue.
 
   - id: workflow-orchestration
     name: Step orchestration + artifact detection
     type: backend
-    status: in-progress
+    status: shipped
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
     depends: [workflow-session-runner]
-    notes: Implemented - six-step state machine with auto-advance, per-step skill prompts, artifact checks (spec/worktree/plan/DONE progress/review file/worktree-gone), worktree-aware cwd, start-at-step, stop, programmatic yaml updates (spec, in-progress, shipped-on-merge). Unit-tested; still needs one real end-to-end pipeline run before calling it shipped.
+    notes: workflow.js; six-step state machine with human-gated advance, artifact checks, worktree-aware cwd, programmatic yaml updates.
 
   - id: plan-project-mode
     name: Plan-project chat mode
@@ -24,34 +90,21 @@ items:
     depends: [workflow-session-runner]
     notes: Chat workflow that interviews you and populates project.yaml with items/depends live. Needs a spec + a real planning session before shipped.
 
+  - id: analyze-project-mode
+    name: Analyze-codebase mode
+    type: integration
+    status: in-progress
+    depends: [workflow-session-runner, portable-init]
+    spec: docs/superpowers/specs/2026-07-11-analyze-project-design.md
+    notes: Reverse-engineers an existing repo into project.yaml via parallel Explore subagents; completion via .superpowers/analyze-report.md.
+
   - id: portable-init
     name: Portable init + CLI
     type: backend
     status: shipped
-    notes: diagram-copilot init scaffolds project.yaml/AGENTS.md/.gitignore in any repo and starts serving; bin entry + default ./project.yaml.
+    notes: server.js bin entry; diagram-copilot init scaffolds project.yaml/AGENTS.md/.gitignore in any repo and serves; default ./project.yaml.
 
-  - id: living-blueprint
-    name: Planning tab + wireframe blueprint
-    type: frontend
-    status: shipped
-    spec: docs/superpowers/specs/2026-07-10-living-blueprint-design.md
-    depends: [plan-project-mode]
-    notes: Planning tab (plan-project chat + live canvas), wireframe HTML rendered in diagram nodes, element-anchored nav/api/data flow edges parsed from data-flow-to attributes.
-
-  - id: viewer-ux-polish
-    name: Schemas tab, data flows, resizable panes, chat scroll
-    type: frontend
-    status: shipped
-    depends: [living-blueprint]
-    notes: >-
-      Schemas tab browsing item contracts (contracts: in project.yaml),
-      item-level flows: with labeled edges, ChatLayout stream scroll
-      (fixes scroll-jump in plan chat), draggable pane dividers.
-      Diagram rework: uniform screen cards with wireframe thumbnails
-      (full wireframe in detail panel), parallel flows bundled into one
-      labeled edge per pair+kind, smoothstep routing, no CSS edge
-      animation (perf), per-file wfrev so only changed wireframes reload.
-
+  # ---- planned work (not yet built) ----
   - id: workflow-execute-viz
     name: Execute/TDD/review visualization
     type: frontend

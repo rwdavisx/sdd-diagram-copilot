@@ -1,5 +1,18 @@
 import { useState } from 'react';
 
+// Persisted open/collapsed state for a side panel.
+export function usePersistedOpen(key, initial = true) {
+  const [open, setOpen] = useState(() => {
+    const v = localStorage.getItem(key);
+    return v === null ? initial : v === '1';
+  });
+  const toggle = () => setOpen((o) => {
+    localStorage.setItem(key, o ? '0' : '1');
+    return !o;
+  });
+  return [open, toggle];
+}
+
 // Draggable pane width: returns [width, onPointerDown for the divider].
 // `fromRight` for panes anchored to the right edge (dragging left widens).
 export function usePaneWidth(key, initial, { min = 260, max = 900, fromRight = false } = {}) {

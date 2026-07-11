@@ -4,23 +4,21 @@
 
 * { box-sizing: border-box; }
 
+/* App palette aliases the Astryx theme tokens, so the whole chrome follows
+   the active theme (data-astryx-theme on <html>) and OS light/dark mode. */
 :root {
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --border: #dfe3e8;
-  --text: #1f2430;
-  --muted: #6b7280;
-  --planned: #d64545;
-  --in-progress: #d99a26;
-  --shipped: #2f9e63;
-  --frontend: #4c7fd6;
-  --backend: #7c5cd6;
-  --integration: #2b9aa8;
+  --bg: var(--color-background-body);
+  --panel: var(--color-background-card);
+  --border: var(--color-border);
+  --text: var(--color-text-primary);
+  --muted: var(--color-text-secondary);
+  --planned: var(--color-text-gray); /* planned means "not started", not "on fire" */
+  --in-progress: var(--color-text-orange);
+  --shipped: var(--color-text-green);
+  --frontend: var(--color-text-blue);
+  --backend: var(--color-text-purple);
+  --integration: var(--color-text-teal);
 }
-
-/* App chrome (panels, lanes, cards) is hardcoded light; astryx uses
-   light-dark() colors, so pin the whole page to light mode. */
-:root { color-scheme: light; }
 
 html, body, #root { height: 100%; margin: 0; }
 body {

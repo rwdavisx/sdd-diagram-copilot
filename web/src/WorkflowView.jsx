@@ -5,8 +5,9 @@ import { ChatComposer, ChatLayout, ChatMessageList, ChatSystemMessage } from '@a
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Selector } from '@astryxdesign/core/Selector';
+import { Spinner } from '@astryxdesign/core/Spinner';
 import { Text } from '@astryxdesign/core/Text';
-import { post, useWorkflowFeed, TranscriptEvent, STEP_INFO } from './useWorkflowFeed.jsx';
+import { post, useWorkflowFeed, Transcript, STEP_INFO } from './useWorkflowFeed.jsx';
 
 const ITEM_PIPELINE = ['brainstorm', 'worktree', 'plan', 'execute', 'review', 'finish'];
 
@@ -26,7 +27,9 @@ function Stepper({ state }) {
           <div key={id} className="wf-step-wrap">
             {i > 0 && <span className="wf-arrow">→</span>}
             <div className={`wf-step wf-step-${phase}`} title={STEP_INFO[id].desc}>
-              <span className="wf-step-num">{done || (i === currentIdx && state.stepStatus === 'done') ? '✓' : i + 1}</span>
+              {phase === 'running'
+                ? <Spinner size="sm" shade="inherit" />
+                : <span className="wf-step-num">{done || (i === currentIdx && state.stepStatus === 'done') ? '✓' : i + 1}</span>}
               <span className="wf-step-label">{STEP_INFO[id].label}</span>
               {skipped && <span className="wf-step-skip-tag">skipped</span>}
             </div>
@@ -38,7 +41,7 @@ function Stepper({ state }) {
 }
 
 // Item picker + optional starting-step choice (items with a spec can skip
-// straight to implementation). Project planning lives in the Planning tab.
+// straight to implementation). Project planning lives in the Design tab.
 function StartControls({ items, prompt }) {
   const [pickedId, setPickedId] = useState('');
   const [startAt, setStartAt] = useState('brainstorm');
@@ -87,6 +90,7 @@ const STATUS_HINTS = {
   stopped: 'Stopped. Start again whenever you like.',
   'needs-attention': 'The session ended without producing the expected artifact. Retry, or start again.',
   interrupted: 'The server restarted while this step was running. Retry to pick it back up.',
+  gated: 'Step complete. Review the output, then continue when ready.',
 };
 const RUNNING_HINTS = {
   brainstorm: 'Claude is refining the spec — answer its questions below.',
@@ -96,23 +100,25 @@ const RUNNING_HINTS = {
   review: 'Reviewing the branch…',
   finish: 'Claude will ask you: merge, PR, keep, or discard. Answer below.',
   'plan-project': 'Describe what you want to build — items appear in the diagram as you talk. Press Stop when the plan feels complete.',
+  'analyze-project': 'Agents are exploring the codebase — items appear on the diagram as areas are mapped. You can interject below.',
 };
-const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning' };
+const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning', gated: 'success' };
 
 export default function WorkflowView({ items }) {
   const wf = useWorkflowFeed();
 
-  if (!wf) return <div className="loading">Loading…</div>;
+  if (!wf) return <div className="loading"><Spinner size="lg" /></div>;
   const { state, transcript } = wf;
   const running = state?.stepStatus === 'running';
+  const gated = state?.stepStatus === 'gated';
+  const nextStep = gated ? state.pipeline[state.pipeline.indexOf(state.step) + 1] : null;
   const item = state?.itemId ? items.find((i) => i.id === state.itemId) : null;
-  const startable = items.filter((i) => i.status !== 'shipped');
+  // Shipped items stay startable — iterating on a finished feature just runs
+  // the pipeline again (status flips back to in-progress while it's worked).
+  const startable = items;
   const canRetry = ['interrupted', 'needs-attention'].includes(state?.stepStatus)
-    && (!state.itemId || (item && item.status !== 'shipped'));
-  // A shipped item makes retry hints misleading — the work is already done.
-  const hint = item?.status === 'shipped' && !running && state?.stepStatus !== 'done'
-    ? 'This item has since shipped, so there is nothing left to retry.'
-    : running ? RUNNING_HINTS[state.step] : STATUS_HINTS[state?.stepStatus];
+    && (!state.itemId || item);
+  const hint = running ? RUNNING_HINTS[state.step] : STATUS_HINTS[state?.stepStatus];
 
   const send = (value) => {
     const t = value.trim();
@@ -125,7 +131,8 @@ export default function WorkflowView({ items }) {
       // Resume at the step that broke; earlier steps' artifacts are on disk.
       post('/api/workflow/start', { itemId: state.itemId, step: state.step });
     } else {
-      post('/api/workflow/plan-project');
+      // Itemless pipelines (plan-project, analyze-project) restart whole.
+      post(`/api/workflow/${state.pipeline[0]}`);
     }
   };
 
@@ -137,7 +144,7 @@ export default function WorkflowView({ items }) {
           <div className="wf-transcript">
             <EmptyState
               title="No workflow yet"
-              description="Pick an item to take through the pipeline above. To plan the whole project first, use the Planning tab."
+              description="Pick an item to take through the pipeline above. To plan the whole project first, use the Design tab."
               actions={<StartControls items={startable} />}
             />
           </div>
@@ -152,10 +159,18 @@ export default function WorkflowView({ items }) {
             <Badge variant={STATUS_BADGE[state.stepStatus] || 'neutral'} label={`${STEP_INFO[state.step]?.label || state.step}: ${state.stepStatus}`} />
             <Text type="supporting" size="xsm">{hint}</Text>
             {running && <Button label="Stop" variant="ghost" size="sm" onClick={() => post('/api/workflow/stop')} />}
+            {gated && nextStep && (
+              <Button
+                label={`Continue → ${STEP_INFO[nextStep]?.label || nextStep}`}
+                variant="primary"
+                size="sm"
+                onClick={() => post('/api/workflow/continue')}
+              />
+            )}
             {canRetry && <Button label={`Retry ${STEP_INFO[state.step]?.label || state.step}`} variant="primary" size="sm" onClick={retry} />}
             {state.error && <Text type="supporting" size="xsm">{state.error}</Text>}
           </HStack>
-          {!running && <StartControls items={startable} prompt="Start something else:" />}
+          {!running && !gated && <StartControls items={startable} prompt="Start something else:" />}
           <ChatLayout
             density="compact"
             className="wf-chat"
@@ -167,16 +182,17 @@ export default function WorkflowView({ items }) {
               />
             )}
           >
-            {transcript.length === 0 && state.stepStatus !== 'done' ? null : (
+            {transcript.length === 0 && state.stepStatus !== 'done' && !running ? null : (
               <ChatMessageList density="compact">
-                {transcript.map((ev) => <TranscriptEvent key={ev.seq} ev={ev} />)}
-                {state.stepStatus === 'done' && (
-                  <ChatSystemMessage>
-                    {state.itemId
-                      ? `pipeline complete for ${state.itemId} — project.yaml has been updated`
-                      : 'project planning saved to project.yaml — check the Diagram and Priority tabs'}
-                  </ChatSystemMessage>
-                )}
+                <Transcript transcript={transcript} pending={wf.pending} running={running}>
+                  {state.stepStatus === 'done' && (
+                    <ChatSystemMessage>
+                      {state.itemId
+                        ? `pipeline complete for ${state.itemId} — project.yaml has been updated`
+                        : 'project planning saved to project.yaml — check the Design and Priority tabs'}
+                    </ChatSystemMessage>
+                  )}
+                </Transcript>
               </ChatMessageList>
             )}
           </ChatLayout>

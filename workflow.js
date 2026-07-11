@@ -8,6 +8,7 @@ const { execFileSync } = require('child_process');
 
 const STEPS = ['brainstorm', 'worktree', 'plan', 'execute', 'review', 'finish'];
 const PROJECT_PIPELINE = ['plan-project'];
+const ANALYZE_PIPELINE = ['analyze-project'];
 
 // ---------- default git helpers (injectable for tests) ----------
 
@@ -40,6 +41,7 @@ function specPath(item) {
 function brainstormPrompt(item) {
   return `You are working on the item "${item.id}" ("${item.name}") from this project's project.yaml.
 Use the superpowers:brainstorming skill to refine this idea into an approved design. Ask me questions one at a time; I am answering from a chat UI, so keep each question self-contained.
+As the design takes shape, record it in project.yaml immediately, not at the end (see AGENTS.md for the schema): every component, sub-feature, API, or integration we identify becomes its own item (id: kebab-case, name, type, status: planned, depends: what it uses, notes), with contracts: and flows: declared as interfaces are decided, and wireframes for new screens. I am watching the architecture diagram live while we talk — it renders from project.yaml.
 When the design is approved: save the spec to specs/${item.id}.md, set this item's spec field in project.yaml to specs/${item.id}.md, and commit both.${item.notes ? `\nExisting notes: ${item.notes}` : ''}`;
 }
 
@@ -55,6 +57,25 @@ Wireframes: for every frontend item, also create/update a wireframe at design/wi
 My messages may start with a [Context: iterating on screen "<id>" — wireframe at <path>] prefix; that means apply the message to that wireframe file directly.
 
 Continue until I say we're done; then make sure project.yaml and the wireframes reflect the complete plan and commit them.`;
+}
+
+function analyzeProjectPrompt() {
+  return `You are reverse-engineering this existing codebase into project.yaml (see AGENTS.md for the schema). The code exists but the blueprint doesn't: deconstruct what is actually built into items so project.yaml describes the real system.
+
+First survey the repo yourself: tech stack, entry points, top-level layout. Then use the superpowers:dispatching-parallel-agents skill to dispatch parallel Explore subagents, one per major area (frontend screens, backend routes/services, data layer, external integrations, tests). Each subagent returns condensed findings — features found, interfaces owned, dependencies between parts, key file paths — never raw file dumps.
+
+Synthesize the findings into project.yaml INCREMENTALLY — update it as each area lands, not all at the end; I am watching the architecture diagram render live from it. Every user-facing screen, API/service, and external integration becomes an item:
+- id: kebab-case, stable; name: human-readable; type: frontend|backend|integration
+- status: shipped for code that exists and works; in-progress only if visibly half-built
+- notes: one line naming the key source paths so future work can find the code
+- depends: what it actually calls/uses — keep this accurate, it draws the diagram edges
+- contracts: each interface the item owns (API endpoints, DB tables, events) with name, kind, schema
+- flows: data movement the item initiates, with short labels
+- tests: existing test files mapped to their owning item (name, file, status: unknown — do not run the suite)
+
+Do not write specs or wireframes — those happen when an item is next worked on. Do not modify any source code.
+
+When project.yaml reflects the whole codebase: commit it, then write a short summary report (areas covered, item count, anything you could not classify) to .superpowers/analyze-report.md. Writing that report file is the LAST thing you do.`;
 }
 
 // Each step: prompt, whether it runs in the worktree, and an artifact check
@@ -85,15 +106,13 @@ Save the plan to exactly docs/superpowers/plans/${item.id}.md and commit it. Sto
   execute: {
     inWorktree: true,
     prompt: (item) => `Use the superpowers:subagent-driven-development skill to execute the plan at docs/superpowers/plans/${item.id}.md, tracking progress in .superpowers/sdd/progress.md as the skill directs.
+As tests are written and run, record each one in project.yaml under this item's \`tests:\` (name, file, status: passing|failing) per AGENTS.md, and keep the statuses current on every run.
 When — and only when — every task in the plan is implemented, reviewed, and committed, append a final line containing exactly DONE to .superpowers/sdd/progress.md.`,
     check: ({ cwd, freshSince }) => {
       const p = path.join(cwd, '.superpowers', 'sdd', 'progress.md');
       if (!fresh(p, freshSince)) return false;
       const lines = fs.readFileSync(p, 'utf8').trim().split('\n');
       return lines.at(-1).trim() === 'DONE';
-    },
-    onStart: ({ item, updateItem }) => {
-      if (item.status === 'planned') updateItem(item.id, { status: 'in-progress' });
     },
   },
   review: {
@@ -121,16 +140,42 @@ Ask me via chat whether to merge, open a PR, keep the branch, or discard it — 
     checkOnEnd: ({ projectDir, freshSince }) =>
       fresh(path.join(projectDir, 'project.yaml'), freshSince),
   },
+  'analyze-project': {
+    prompt: () => analyzeProjectPrompt(),
+    // Autonomous: done when the final report lands. Stopping early after
+    // items were written still counts as a (partial) import.
+    check: ({ projectDir, freshSince }) =>
+      fresh(path.join(projectDir, '.superpowers', 'analyze-report.md'), freshSince),
+    checkOnEnd: ({ projectDir, freshSince }) =>
+      fresh(path.join(projectDir, 'project.yaml'), freshSince),
+  },
 };
 
 function fresh(file, sinceIso) {
   try { return fs.statSync(file).mtimeMs > Date.parse(sinceIso); } catch { return false; }
 }
 
+// Which model/effort a step's session runs with, from project.yaml:
+//   workflow:
+//     defaults: { model: sonnet, effort: medium }
+//     steps:
+//       execute: { model: claude-fable-5, effort: high }
+// plus an optional per-item `workflow: { model, effort }` on the item itself,
+// which wins over the step config. Unset fields inherit the CLI default.
+function resolveStepConfig(wfConfig, stepId, item) {
+  const cfg = {
+    ...(wfConfig && wfConfig.defaults),
+    ...(wfConfig && wfConfig.steps && wfConfig.steps[stepId]),
+    ...(item && item.workflow),
+  };
+  return { model: cfg.model, effort: cfg.effort };
+}
+
 let runCounter = 0;
 
 function createWorkflow({
   projectDir, loadItems, runSession, broadcast, updateItem = () => {},
+  loadWorkflowConfig = () => null,
   listWorktrees = () => defaultListWorktrees(projectDir),
   isBranchMerged = defaultIsBranchMerged,
 }) {
@@ -158,7 +203,7 @@ function createWorkflow({
   }
 
   function record(ev) {
-    ev = { seq: seq++, ...ev };
+    ev = { seq: seq++, at: new Date().toISOString(), ...ev };
     transcript.push(ev);
     broadcast(ev);
   }
@@ -191,16 +236,24 @@ function createWorkflow({
     const idx = state.pipeline.indexOf(state.step);
     const next = state.pipeline[idx + 1];
     session.close();
-    if (next) {
-      setState({ steps });
-      startStep(next);
-    } else {
-      setState({ steps, stepStatus: 'done' });
-    }
+    // Gate between steps: never auto-advance. The human reviews the step's
+    // output and presses Continue (advance()) to start the next one.
+    setState({ steps, stepStatus: next ? 'gated' : 'done' });
+  }
+
+  function advance() {
+    if (!state || state.stepStatus !== 'gated') return { error: 'No step is waiting at a gate', code: 409 };
+    const next = state.pipeline[state.pipeline.indexOf(state.step) + 1];
+    if (!next) { setState({ stepStatus: 'done' }); return { state }; }
+    startStep(next);
+    return { state };
   }
 
   function onEvent(run, stepId, ev) {
     if (run !== runCounter || state.step !== stepId) return; // stale run or stale step
+    // Deltas are broadcast-only: the final assistant-text supersedes them, so
+    // storing them would bloat the reload-rehydration buffer for nothing.
+    if (ev.kind === 'assistant-delta') return broadcast(ev);
     if (ev.kind === 'session-start') setState({ sessionId: ev.sessionId });
     record(ev);
     if (ev.kind === 'turn-end' && state.stepStatus === 'running') {
@@ -213,12 +266,20 @@ function createWorkflow({
     const run = runCounter; // same workflow run
     const def = STEP_DEFS[stepId];
     const item = currentItem();
+    // Any pipeline step on an item means work is underway — flip the status
+    // here so it holds no matter which step a run starts, resumes, or retries
+    // at. Shipped items flip too: iterating on a finished feature puts it
+    // back in progress until the new branch merges.
+    if (item && item.status !== 'in-progress') updateItem(item.id, { status: 'in-progress' });
     setState({ step: stepId, stepStatus: 'running', stepStartedAt: new Date().toISOString(), sessionId: null, error: null });
     if (def.onStart) def.onStart(checkCtx());
     record({ kind: 'step-start', step: stepId });
+    const { model, effort } = resolveStepConfig(loadWorkflowConfig(), stepId, item);
     session = runSession({
       initialPrompt: def.prompt(item),
       cwd: stepCwd(stepId),
+      model,
+      effort,
       onEvent: (ev) => onEvent(run, stepId, ev),
     });
     session.done.then(({ ok, error }) => {
@@ -250,7 +311,6 @@ function createWorkflow({
   function start(itemId, startAt = 'brainstorm') {
     const item = loadItems().find((i) => i && i.id === itemId);
     if (!item) return { error: `Unknown item "${itemId}"`, code: 400 };
-    if (item.status === 'shipped') return { error: `"${itemId}" is already shipped`, code: 400 };
     if (!STEPS.includes(startAt)) return { error: `Unknown step "${startAt}"`, code: 400 };
     if (startAt !== 'brainstorm' && !item.spec) {
       return { error: `"${itemId}" has no spec yet — start from brainstorm`, code: 400 };
@@ -267,6 +327,10 @@ function createWorkflow({
 
   function planProject() {
     return begin({ pipeline: PROJECT_PIPELINE, startAt: 'plan-project' });
+  }
+
+  function analyzeProject() {
+    return begin({ pipeline: ANALYZE_PIPELINE, startAt: 'analyze-project' });
   }
 
   function stop() {
@@ -288,7 +352,7 @@ function createWorkflow({
     return true;
   }
 
-  return { start, planProject, stop, input, getState: () => state, getTranscript: () => transcript };
+  return { start, planProject, analyzeProject, advance, stop, input, getState: () => state, getTranscript: () => transcript };
 }
 
-module.exports = { createWorkflow, brainstormPrompt, planProjectPrompt, STEPS };
+module.exports = { createWorkflow, brainstormPrompt, planProjectPrompt, analyzeProjectPrompt, resolveStepConfig, STEPS };
