@@ -3,7 +3,8 @@
 This repo is **diagram-copilot**, a viewer for spec-driven development. Each
 target project keeps a `project.yaml` that is the single source of truth for
 what exists, what's being built, and what's still just an idea. **Agents read
-and edit `project.yaml` directly — never through the viewer** (the UI is
+and edit `project.yaml` directly — never through the viewer** (the UI's only
+write is the New idea form, which seeds a planned item; everything else is
 read-only by design).
 
 ## Schema

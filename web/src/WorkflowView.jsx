@@ -7,6 +7,8 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Spinner } from '@astryxdesign/core/Spinner';
 import { Text } from '@astryxdesign/core/Text';
+import { TextInput } from '@astryxdesign/core/TextInput';
+import { VStack } from '@astryxdesign/core/VStack';
 import { post, useWorkflowFeed, Transcript, STEP_INFO } from './useWorkflowFeed.jsx';
 
 const ITEM_PIPELINE = ['brainstorm', 'worktree', 'plan', 'execute', 'review', 'finish'];
@@ -86,6 +88,47 @@ function StartControls({ items, prompt, selectedId, onSelect }) {
   );
 }
 
+const TYPE_OPTIONS = ['frontend', 'backend', 'integration'].map((t) => ({ value: t, label: t }));
+
+// The UI's single write affordance: seed a planned item in project.yaml —
+// optionally starting a fresh brainstorm session on it right away. All other
+// state transitions stay workflow/agent-owned.
+function NewIdeaForm({ onSelect }) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState('frontend');
+  const [idea, setIdea] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const create = async (brainstorm) => {
+    setBusy(true);
+    setError(null);
+    const r = await post('/api/items', { name, type, notes: idea });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { setError(data.error || 'Failed to add item'); setBusy(false); return; }
+    setName(''); setIdea(''); setBusy(false);
+    if (!brainstorm) return;
+    const s = await post('/api/workflow/start', { itemId: data.id, step: 'brainstorm' });
+    if (!s.ok) {
+      const err = await s.json().catch(() => ({}));
+      setError(`"${data.id}" is in the backlog, but brainstorm couldn't start: ${err.error || 'unknown error'}`);
+    }
+    onSelect(data.id);
+  };
+
+  return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      <Text type="body">New idea:</Text>
+      <TextInput label="Idea name" isLabelHidden size="sm" placeholder="Name (e.g. PNG export)" value={name} onChange={setName} />
+      <Selector label="Type" isLabelHidden size="sm" value={type} onChange={setType} options={TYPE_OPTIONS} />
+      <TextInput label="What is it?" isLabelHidden size="sm" placeholder="One-liner (optional)" value={idea} onChange={setIdea} />
+      <Button label="Add to backlog" variant="ghost" size="sm" isDisabled={busy || !name.trim()} onClick={() => create(false)} />
+      <Button label="Brainstorm now" variant="primary" size="sm" isDisabled={busy || !name.trim()} onClick={() => create(true)} />
+      {error && <Text type="supporting" size="xsm">{error}</Text>}
+    </HStack>
+  );
+}
+
 const STATUS_HINTS = {
   done: 'Pipeline complete.',
   stopped: 'Stopped. Start again whenever you like.',
@@ -153,8 +196,13 @@ export default function WorkflowView({ items, selectedId, onSelect }) {
                 ? (selected.spec
                   ? 'Has a spec — run the full pipeline, or start at Worktree to implement it.'
                   : 'Needs a spec — take it through Brainstorm first.')
-                : 'Pick an item to take through the pipeline above. To plan the whole project first, use the Design tab.'}
-              actions={<StartControls items={startable} selectedId={selectedId} onSelect={onSelect} />}
+                : 'Pick an item to take through the pipeline, or type a new idea below. To plan the whole project first, use the Design tab.'}
+              actions={(
+                <VStack gap={3}>
+                  <StartControls items={startable} selectedId={selectedId} onSelect={onSelect} />
+                  <NewIdeaForm onSelect={onSelect} />
+                </VStack>
+              )}
             >
               {state && ['running', 'gated'].includes(state.stepStatus) && (
                 <Button
@@ -188,7 +236,12 @@ export default function WorkflowView({ items, selectedId, onSelect }) {
             {canRetry && <Button label={`Retry ${STEP_INFO[state.step]?.label || state.step}`} variant="primary" size="sm" onClick={retry} />}
             {state.error && <Text type="supporting" size="xsm">{state.error}</Text>}
           </HStack>
-          {!running && !gated && <StartControls items={startable} selectedId={selectedId} onSelect={onSelect} prompt="Start something else:" />}
+          {!running && !gated && (
+            <>
+              <StartControls items={startable} selectedId={selectedId} onSelect={onSelect} prompt="Start something else:" />
+              <NewIdeaForm onSelect={onSelect} />
+            </>
+          )}
           <ChatLayout
             density="compact"
             className="wf-chat"
