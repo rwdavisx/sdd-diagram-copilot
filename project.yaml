@@ -404,6 +404,22 @@ items:
     status: planned
     spec: specs/graphify-integration.md
     notes: "On server start / first project open: if `graphify` not on PATH, auto-install via `uv tool install graphifyy` (fallback: pipx). Install failure degrades gracefully â€” sessions run without graph, UI shows the install hint. Also `uv tool upgrade` periodically to stay current."
+    tests:
+      - name: "ensureInstalled: graphify already on PATH -> available, no installer runs"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureInstalled: missing -> uv tool install graphifyy"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureInstalled: no uv -> pipx install graphifyy"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureInstalled: nothing works -> unavailable with a hint, no throw"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureInstalled: kicks a background upgrade once when available"
+        file: test/graphify.test.js
+        status: passing
   - id: graphify-refresh
     name: "Graphify Refresh Pipeline"
     type: backend
@@ -418,6 +434,31 @@ items:
         schema: |
           in:  projectDir
           out: { state: fresh | stale-regenerating | missing }
+    tests:
+      - name: "ensureGraphFresh: no graph at all -> missing + background regen spawned"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureGraphFresh: marker matches repo stamp -> fresh, nothing spawned"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureGraphFresh: repo moved on -> stale-regenerating + regen"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureGraphFresh: only one regen in flight per project"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureGraphFresh: failed regen (exit 1) writes no marker, next call retries"
+        file: test/graphify.test.js
+        status: passing
+      - name: "ensureGraphFresh: CLI unavailable -> no spawn, missing/fresh from what exists"
+        file: test/graphify.test.js
+        status: passing
+      - name: "regen adds graphify-out/ to the target project .gitignore once"
+        file: test/graphify.test.js
+        status: passing
+      - name: "status: unavailable / missing / fresh / stale-regenerating + generatedAt"
+        file: test/graphify.test.js
+        status: passing
   - id: graphify-session-context
     name: "Graph Context in Session Prompt"
     type: backend
@@ -425,6 +466,22 @@ items:
     spec: specs/graphify-integration.md
     depends: [graphify-refresh]
     notes: "Inject a pointer into each workflow session's initial prompt: GRAPH_REPORT.md location + 'consult the graph before exploring'. Instant orientation, zero tool calls."
+    tests:
+      - name: "sessionContext: names the report and json absolute paths"
+        file: test/graphify.test.js
+        status: passing
+      - name: "sessionContext: empty string when the graph does not exist"
+        file: test/graphify.test.js
+        status: passing
+      - name: "startStep appends graph context to the prompt and refreshes the graph"
+        file: test/workflow.test.js
+        status: passing
+      - name: "no graphify dep -> prompt is exactly the step prompt (unchanged behavior)"
+        file: test/workflow.test.js
+        status: passing
+      - name: "a throwing graphify never blocks the session (enhancer, not a gate)"
+        file: test/workflow.test.js
+        status: passing
   - id: graphify-graph-tab
     name: "Graph Tab (embed graph.html)"
     type: frontend
@@ -440,6 +497,11 @@ items:
         kind: api
         schema: |
           response: { state: fresh | stale-regenerating | missing | unavailable, generatedAt: iso8601 | null }
+      - name: POST /api/graphify/regenerate
+        kind: api
+        description: force a background graph regen (403 cross-origin, 503 when graphify unavailable)
+        schema: |
+          response: { state: fresh | stale-regenerating | missing }
   - id: graphify-mcp-attach
     name: "Graphify MCP Server per Session"
     type: integration
@@ -447,3 +509,16 @@ items:
     spec: specs/graphify-integration.md
     depends: [graphify-refresh]
     notes: "Attach Graphify's MCP server (stdio) to each Agent SDK session via mcpServers option in sessions.js, giving the LLM live graph query tools (callers, shortest-path, explain-entity)."
+    tests:
+      - name: "mcpServers: stdio config pointing at graph.json (uv launcher when uv exists)"
+        file: test/graphify.test.js
+        status: passing
+      - name: "mcpServers: null when graph.json missing or CLI unavailable"
+        file: test/graphify.test.js
+        status: passing
+      - name: "startSession forwards mcpServers into SDK options; omits when absent"
+        file: test/sessions.test.js
+        status: passing
+      - name: "startStep passes graphify mcpServers through to runSession"
+        file: test/workflow.test.js
+        status: passing
