@@ -87,7 +87,7 @@ async function defaultQueryFn(args) {
 
 // Start a headless Claude Code session with streaming input. The session
 // stays alive across turns until close() (or an SDK error) ends it.
-function startSession({ initialPrompt, cwd, resume, model, effort, onEvent, queryFn = defaultQueryFn }) {
+function startSession({ initialPrompt, cwd, resume, model, effort, mcpServers, onEvent, queryFn = defaultQueryFn }) {
   const input = createInputQueue();
   input.push(userMessage(initialPrompt));
   let q = null;
@@ -104,6 +104,7 @@ function startSession({ initialPrompt, cwd, resume, model, effort, onEvent, quer
           // fall back to the CLI's default model and effort.
           ...(model ? { model } : {}),
           ...(effort ? { effort } : {}),
+          ...(mcpServers ? { mcpServers } : {}),
           includePartialMessages: true,
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,

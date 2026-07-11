@@ -132,11 +132,28 @@ function createGraphify({
     return `\n\nA Graphify knowledge graph of this codebase is available. For instant orientation read ${p.report} (key concepts, connections, suggested questions); the full graph is at ${p.json}. Consult the graph before exploratory grepping.`;
   }
 
+  // Stdio MCP server config for the Agent SDK, giving sessions live graph
+  // query tools (query_graph, get_node, get_neighbors, shortest_path, ...).
+  // ponytail: upstream only documents `python -m graphify.serve`; with uv we
+  // launch through `uv run --with graphifyy` so the module resolves in an
+  // isolated env. Revisit if graphify ships a first-class serve entry point.
+  function mcpServers(projectDir) {
+    const p = paths(projectDir);
+    if (!available || !fs.existsSync(p.json)) return null;
+    const serve = ['-m', 'graphify.serve', p.json, '--transport', 'stdio'];
+    return {
+      graphify: hasUv
+        ? { type: 'stdio', command: 'uv', args: ['run', '--with', 'graphifyy', 'python', ...serve] }
+        : { type: 'stdio', command: 'python', args: serve },
+    };
+  }
+
   return {
     ensureInstalled,
     paths,
     ensureGraphFresh,
     sessionContext,
+    mcpServers,
     status,
     get available() { return available; },
     get installHint() { return installHint; },

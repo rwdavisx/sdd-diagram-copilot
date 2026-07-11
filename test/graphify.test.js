@@ -203,3 +203,30 @@ test('sessionContext: empty string when the graph does not exist', async () => {
   await ready;
   assert.strictEqual(g.sessionContext(tmpProject()), '');
 });
+
+test('mcpServers: stdio config pointing at graph.json (uv launcher when uv exists)', async () => {
+  const { g, ready } = installed(); // fakeExec ok-list includes 'uv'
+  await ready;
+  const dir = tmpProject();
+  fs.mkdirSync(g.paths(dir).dir, { recursive: true });
+  fs.writeFileSync(g.paths(dir).json, '{}');
+  const cfg = g.mcpServers(dir);
+  assert.strictEqual(cfg.graphify.type, 'stdio');
+  assert.strictEqual(cfg.graphify.command, 'uv');
+  assert.deepStrictEqual(cfg.graphify.args,
+    ['run', '--with', 'graphifyy', 'python', '-m', 'graphify.serve', g.paths(dir).json, '--transport', 'stdio']);
+});
+
+test('mcpServers: null when graph.json missing or CLI unavailable', async () => {
+  const { g, ready } = installed();
+  await ready;
+  assert.strictEqual(g.mcpServers(tmpProject()), null);
+
+  const off = createGraphify({ execFileFn: fakeExec([]).execFileFn, log: () => {} });
+  await off.ensureInstalled();
+  const dir = tmpProject();
+  const offPaths = pathMod.join(dir, 'graphify-out');
+  fs.mkdirSync(offPaths, { recursive: true });
+  fs.writeFileSync(pathMod.join(offPaths, 'graph.json'), '{}');
+  assert.strictEqual(off.mcpServers(dir), null);
+});

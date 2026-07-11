@@ -280,11 +280,14 @@ function createWorkflow({
     try { graphify.ensureGraphFresh(projectDir); } catch { /* degrade */ }
     let graphCtx = '';
     try { graphCtx = graphify.sessionContext(projectDir) || ''; } catch { /* degrade */ }
+    let mcp = null;
+    try { mcp = graphify.mcpServers(projectDir); } catch { /* degrade */ }
     session = runSession({
       initialPrompt: def.prompt(item) + graphCtx,
       cwd: stepCwd(stepId),
       model,
       effort,
+      mcpServers: mcp,
       onEvent: (ev) => onEvent(run, stepId, ev),
     });
     session.done.then(({ ok, error }) => {

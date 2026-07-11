@@ -414,3 +414,12 @@ test('a throwing graphify never blocks the session (enhancer, not a gate)', () =
   assert.ok(!r.error);
   assert.strictEqual(sessions.length, 1);
 });
+
+test('startStep passes graphify mcpServers through to runSession', () => {
+  const mcp = { graphify: { type: 'stdio', command: 'python', args: [] } };
+  const wf = makeWorkflow({
+    graphify: { ensureGraphFresh: () => {}, sessionContext: () => '', mcpServers: () => mcp },
+  });
+  wf.start('feat-a');
+  assert.deepStrictEqual(lastSession().args.mcpServers, mcp);
+});

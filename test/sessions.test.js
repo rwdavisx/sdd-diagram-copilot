@@ -162,3 +162,16 @@ test('send() after close() is refused', async () => {
   await session.done;
   assert.strictEqual(session.send('more'), false);
 });
+
+test('startSession forwards mcpServers into SDK options; omits when absent', async () => {
+  let captured;
+  const queryFn = async (args) => { captured = args; return (async function* () {})(); };
+  const mcp = { graphify: { type: 'stdio', command: 'python', args: [] } };
+  const s1 = startSession({ initialPrompt: 'hi', cwd: '.', onEvent: () => {}, queryFn, mcpServers: mcp });
+  await s1.done;
+  assert.deepStrictEqual(captured.options.mcpServers, mcp);
+
+  const s2 = startSession({ initialPrompt: 'hi', cwd: '.', onEvent: () => {}, queryFn });
+  await s2.done;
+  assert.ok(!('mcpServers' in captured.options));
+});
