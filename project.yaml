@@ -7,30 +7,29 @@ items:
     name: App shell + tabs
     type: frontend
     status: shipped
-    notes: web/src/App.jsx tab container + DetailPanel overlay; shared SSE singleton in web/src/useWorkflowFeed.jsx, chips.jsx badges, resize.jsx panes; Vite 8 + React 19 build in web/.
-    flows:
-      - { to: plan-project-mode, kind: api, label: "start item workflow" }
+    depends: [http-api, workflow-orchestration]
+    notes: web/src/App.jsx tab container + shared SSE singleton in useWorkflowFeed.jsx, chips.jsx badges, resize.jsx panes; Vite 8 + React 19 build in web/.
 
   - id: design-view
     name: Design tab (planning chat + canvas)
     type: frontend
     status: shipped
-    depends: [app-shell, diagram-view, plan-project-mode, analyze-project-mode]
-    notes: web/src/DesignView.jsx; landing tab, split pane of planning chat and embedded architecture diagram; starts plan-project/analyze-project chats.
+    depends: [app-shell, diagram-view, plan-project-mode, analyze-project-mode, workflow-orchestration]
+    notes: web/src/DesignView.jsx; landing tab, split pane of planning chat and embedded diagram; starts plan-project/analyze-project chats, sends input/stop.
 
   - id: diagram-view
     name: Architecture diagram canvas
     type: frontend
     status: shipped
-    depends: [app-shell]
-    notes: web/src/DiagramView.jsx; react-flow (@xyflow/react 12) + dagre layout, wireframe thumbnails in nodes via iframe, bundled labeled flow edges.
+    depends: [http-api]
+    notes: web/src/DiagramView.jsx; react-flow (@xyflow/react 12) + dagre layout, wireframe thumbnails in node iframes (/design/wireframes/*), bundled labeled flow edges.
 
   - id: board-view
     name: Board tab (kanban)
     type: frontend
     status: shipped
     depends: [app-shell]
-    notes: web/src/BoardView.jsx; items grouped by planned/in-progress/shipped, pure render of /api/project items.
+    notes: web/src/BoardView.jsx; items grouped by planned/in-progress/shipped, pure render.
 
   - id: schema-view
     name: Schemas tab
@@ -44,65 +43,316 @@ items:
     type: frontend
     status: shipped
     depends: [app-shell]
-    notes: web/src/TestsView.jsx; all recorded tests grouped by item with pass/fail rollup, pure render.
+    notes: web/src/TestsView.jsx; recorded tests grouped by item with pass/fail rollup, pure render.
 
   - id: priority-view
     name: Priority tab
     type: frontend
     status: shipped
-    depends: [app-shell]
-    notes: web/src/PriorityView.jsx; ranked ready/blocked work list with per-item Start workflow button.
+    depends: [app-shell, priority-engine]
+    notes: web/src/PriorityView.jsx; ranked ready/blocked work list from /api/priority, per-item Start workflow.
 
   - id: workflow-view
     name: Workflow tab (stepper + transcript)
     type: frontend
     status: shipped
     depends: [app-shell, workflow-orchestration]
-    notes: web/src/WorkflowView.jsx; pipeline stepper, live chat transcript (non-durable), start/continue/stop/input controls.
+    notes: web/src/WorkflowView.jsx; pipeline stepper, live transcript (non-durable), start/continue/stop/input controls.
 
   - id: detail-panel
     name: Item detail panel
     type: frontend
     status: shipped
-    depends: [app-shell]
-    notes: web/src/DetailPanel.jsx; slide-out for selected item, renders spec markdown via /api/spec and full wireframe iframe.
+    depends: [app-shell, http-api]
+    notes: web/src/DetailPanel.jsx; slide-out for selected item, spec markdown via /api/spec, full wireframe iframe.
 
-  # ---- backend / integration (being refined) ----
-  - id: workflow-session-runner
-    name: Workflow session runner + chat
-    type: integration
+  # ---- backend ----
+  - id: http-api
+    name: HTTP API server + SSE
+    type: backend
     status: shipped
-    spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
-    notes: sessions.js; Agent SDK integration, SSE relay, input queue.
+    depends: [project-loader, wireframe-flows, priority-engine, workflow-orchestration]
+    notes: server.js:342-527; router, SSE broadcast, static web/dist SPA hosting, same-origin POST guard, fs.watch reload (project.yaml + design/), 127.0.0.1 only.
+    flows:
+      - { to: app-shell, kind: data, label: "SSE reload + workflow events" }
+    contracts:
+      - name: GET /api/project
+        kind: api
+        description: Full blueprint for the viewer
+        schema: |
+          response: { project, items[ + wireframe, wfrev, plan{tasks,done} ], workflow, errors[], flows[] }
+      - name: GET /api/spec?path=
+        kind: api
+        description: Raw spec markdown; path-traversal guarded (403), 404 if missing
+      - name: GET /api/events
+        kind: event
+        description: SSE stream shared by the whole page
+        schema: |
+          hello                on connect (then ": ping" keep-alive every 25s)
+          reload               debounced 200ms on project.yaml / design/ file changes
+          workflow             { kind: workflow, state } and transcript events (see workflow-session-runner)
+      - name: GET /design/wireframes/*
+        kind: api
+        description: Serves wireframe HTML same-origin so the viewer can measure anchor elements in-iframe
+
+  - id: project-loader
+    name: project.yaml loader + writer
+    type: backend
+    status: shipped
+    notes: server.js:63-149 loadProject (js-yaml, validation, wireframe path resolution, wfrev mtime), server.js:277-295 updateProjectItem (line-targeted comment-preserving writes), planInfo checkbox counts.
+    contracts:
+      - name: project.yaml schema
+        kind: db
+        description: The single source of truth this whole product renders and edits
+        schema: |
+          items[]: id (unique kebab), name, type frontend|backend|integration,
+                   status planned|in-progress|shipped, spec?, depends[]? (known ids),
+                   notes?, workflow?, wireframe?, flows[]?, contracts[]? (name required),
+                   tests[]? (name required, status passing|failing|unknown)
+          errors: dangling depends, duplicate ids, orphan/missing wireframes -> surfaced in UI
+    tests:
+      - name: updates an existing field on the right item only
+        file: test/yaml-update.test.js
+      - name: inserts a missing field at the end of the item block
+        file: test/yaml-update.test.js
+      - name: preserves comments and untouched lines verbatim
+        file: test/yaml-update.test.js
+      - name: returns false for an unknown item and leaves the file alone
+        file: test/yaml-update.test.js
+      - name: planInfo counts plan checkboxes, preferring the active worktree copy
+        file: test/yaml-update.test.js
+      - name: detects a convention-path wireframe; others stay null
+        file: test/wireframes.test.js
+      - name: declared wireframe that is missing on disk is an error and nulled
+        file: test/wireframes.test.js
+      - name: orphan wireframe file with no matching item is an error
+        file: test/wireframes.test.js
+      - name: "contracts validate: list shape and required name"
+        file: test/wireframes.test.js
+
+  - id: wireframe-flows
+    name: Wireframe flow parser
+    type: backend
+    status: shipped
+    depends: [project-loader]
+    notes: server.js:155-207 parseWireframeFlows + loadWireframes; regex-scans wireframe HTML for flow attributes, merges item-level flows from yaml, drops dangling targets as errors.
+    contracts:
+      - name: data-flow-* attributes
+        kind: html
+        description: Convention wireframe HTML uses to declare diagram edges
+        schema: |
+          <el id="anchor" data-flow-to="<item-id>" data-flow-kind="nav|api|data" data-flow-label="...">
+          kind defaults to nav in wireframes, data for item-level flows: in yaml
+    tests:
+      - name: parses anchor, target, and kind from a tag
+        file: test/wireframes.test.js
+      - name: kind defaults to nav; missing id gives a null anchor
+        file: test/wireframes.test.js
+      - name: attribute order within the tag does not matter
+        file: test/wireframes.test.js
+      - name: data-flow-label is captured
+        file: test/wireframes.test.js
+      - name: finds multiple flow elements across a document
+        file: test/wireframes.test.js
+      - name: no flow attributes -> empty list
+        file: test/wireframes.test.js
+      - name: loadWireframes derives flows and drops dangling targets with an error
+        file: test/wireframes.test.js
+      - name: item-level flows merge in with defaults; bad targets error
+        file: test/wireframes.test.js
+      - name: flows that are not a list error without crashing
+        file: test/wireframes.test.js
+
+  - id: priority-engine
+    name: Priority engine
+    type: backend
+    status: shipped
+    depends: [project-loader]
+    notes: server.js:212-271 computePriority; ready items (all deps shipped) ranked by transitive dependents unblocked, then Kahn topo order for blocked; cycles flagged not fatal.
+    contracts:
+      - name: GET /api/priority
+        kind: api
+        schema: |
+          response: { items[{ id, name, type, status, spec, ready, blockedBy[], dependents, cycle? }], warnings[] }
+    tests:
+      - name: shipped items excluded; ready-first then topo order; dependents/blockedBy computed
+        file: test/priority.test.js
+      - name: cycle a<->b flagged, appended after non-cycle items, one warning
+        file: test/priority.test.js
+      - name: dangling dep does not block readiness
+        file: test/priority.test.js
+      - name: equal dependents count -> tie broken by id ascending
+        file: test/priority.test.js
 
   - id: workflow-orchestration
-    name: Step orchestration + artifact detection
+    name: Workflow orchestrator
     type: backend
     status: shipped
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
-    depends: [workflow-session-runner]
-    notes: workflow.js; six-step state machine with human-gated advance, artifact checks, worktree-aware cwd, programmatic yaml updates.
+    depends: [workflow-session-runner, project-loader]
+    notes: workflow.js; gated six-step pipeline (brainstorm>worktree>plan>execute>review>finish), mtime-fresh artifact checks per step, worktree-aware cwd, needs-attention/stopped/interrupted handling, resolveStepConfig model/effort merge.
+    flows:
+      - { to: project-loader, kind: data, label: "spec/status writes to project.yaml" }
+    contracts:
+      - name: workflow control API
+        kind: api
+        schema: |
+          GET  /api/workflow                  -> { state, transcript[], steps }
+          POST /api/workflow/start            { itemId, step? }  409 if running
+          POST /api/workflow/continue         advance past a gated step
+          POST /api/workflow/stop
+          POST /api/workflow/input            { text } -> live session
+      - name: .superpowers/workflow.json
+        kind: db
+        description: Persisted running state; stale running flips to interrupted on boot
+    tests:
+      - name: assistant-delta is broadcast live but never stored in the transcript
+        file: test/workflow.test.js
+      - name: transcript events carry an ISO timestamp
+        file: test/workflow.test.js
+      - name: start rejects unknown and specless late-start items
+        file: test/workflow.test.js
+      - name: shipped items can start a new workflow (iterate) and flip back to in-progress
+        file: test/workflow.test.js
+      - name: start spawns a brainstorm session and persists running state
+        file: test/workflow.test.js
+      - name: start returns 409 while a workflow is running
+        file: test/workflow.test.js
+      - name: brainstorm completion records the spec and gates before worktree
+        file: test/workflow.test.js
+      - name: advance is rejected unless a step is waiting at a gate
+        file: test/workflow.test.js
+      - name: a gated workflow survives a restart and can be advanced
+        file: test/workflow.test.js
+      - name: a stale spec file does not complete a fresh brainstorm
+        file: test/workflow.test.js
+      - name: worktree completion captures the path and later steps run inside it
+        file: test/workflow.test.js
+      - name: starting any step marks a planned item in-progress
+        file: test/workflow.test.js
+      - name: execute completes only on a DONE progress file
+        file: test/workflow.test.js
+      - name: finish completes when the worktree is gone; merged branches ship the item
+        file: test/workflow.test.js
+      - name: finish on a discarded (unmerged) branch does not ship the item
+        file: test/workflow.test.js
+      - name: restarting at a post-worktree step re-discovers the worktree or errors
+        file: test/workflow.test.js
+      - name: session ending mid-step marks needs-attention
+        file: test/workflow.test.js
+      - name: stop() ends a running step as stopped, not needs-attention
+        file: test/workflow.test.js
+      - name: input echoes user-text and forwards to the session
+        file: test/workflow.test.js
+      - name: a persisted running workflow loads as interrupted after restart
+        file: test/workflow.test.js
+      - name: late events from a superseded run or step are ignored
+        file: test/workflow.test.js
+      - name: resolveStepConfig merges defaults < step < item override
+        file: test/workflow.test.js
+      - name: startStep passes resolved model/effort to runSession
+        file: test/workflow.test.js
+
+  - id: cli-init
+    name: CLI + init scaffolder
+    type: backend
+    status: shipped
+    depends: [http-api]
+    notes: server.js:18-61 parseArgs + initProject; bin diagram-copilot, idempotent scaffold of project.yaml/AGENTS.md/.gitignore, opens browser unless --no-open.
+    flows:
+      - { to: project-loader, kind: data, label: "scaffolds project.yaml + AGENTS.md" }
+    contracts:
+      - name: diagram-copilot CLI
+        kind: cli
+        schema: |
+          diagram-copilot [path/to/project.yaml] [--port 4400] [--no-open]
+          diagram-copilot init
+
+  # ---- integrations ----
+  - id: workflow-session-runner
+    name: Claude Agent SDK session runner
+    type: integration
+    status: shipped
+    spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
+    notes: sessions.js; spawns headless Claude Code via @anthropic-ai/claude-agent-sdk (streaming input, bypassPermissions), async input queue, flattens SDK messages to UI events.
+    contracts:
+      - name: workflow transcript events
+        kind: event
+        description: Flattened UI event shapes relayed over the SSE workflow channel
+        schema: |
+          session-start { model } | assistant-delta { text } (broadcast-only) |
+          assistant-text { text } | tool-use { name, summary } |
+          turn-end { ok, costUsd } | user-text { text }
+    tests:
+      - name: queue yields pushed messages in order, ends on close
+        file: test/sessions.test.js
+      - name: queue delivers messages pushed while a consumer is waiting
+        file: test/sessions.test.js
+      - name: push after close is refused
+        file: test/sessions.test.js
+      - name: userMessage wraps text in the SDK user message shape
+        file: test/sessions.test.js
+      - name: "toUiEvents: system init -> session-start"
+        file: test/sessions.test.js
+      - name: "toUiEvents: assistant text + tool_use blocks"
+        file: test/sessions.test.js
+      - name: "toUiEvents: result -> turn-end"
+        file: test/sessions.test.js
+      - name: "toUiEvents: irrelevant messages produce nothing"
+        file: test/sessions.test.js
+      - name: "toUiEvents: stream_event text delta -> assistant-delta"
+        file: test/sessions.test.js
+      - name: "toUiEvents: subagent and non-text stream events produce nothing"
+        file: test/sessions.test.js
+      - name: startSession relays flattened events and resolves done with the session id
+        file: test/sessions.test.js
+      - name: startSession seeds the input stream with the initial prompt
+        file: test/sessions.test.js
+      - name: startSession resolves done with ok:false when the SDK throws
+        file: test/sessions.test.js
+      - name: send() after close() is refused
+        file: test/sessions.test.js
 
   - id: plan-project-mode
     name: Plan-project chat mode
     type: integration
     status: in-progress
-    depends: [workflow-session-runner]
-    notes: Chat workflow that interviews you and populates project.yaml with items/depends live. Needs a spec + a real planning session before shipped.
+    depends: [workflow-orchestration]
+    notes: workflow.js PROJECT_PIPELINE + planProjectPrompt; chat that interviews you and populates project.yaml live; completes on stop if yaml changed. Needs a spec + a real planning session before shipped.
+    flows:
+      - { to: project-loader, kind: data, label: "populates planned items" }
+    contracts:
+      - name: POST /api/workflow/plan-project
+        kind: api
+        description: Starts the single-step plan-project chat pipeline
+    tests:
+      - name: plan-project completes on stop when project.yaml was modified
+        file: test/workflow.test.js
+      - name: plan-project stop without yaml changes just stops
+        file: test/workflow.test.js
 
   - id: analyze-project-mode
     name: Analyze-codebase mode
     type: integration
     status: in-progress
-    depends: [workflow-session-runner, portable-init]
     spec: docs/superpowers/specs/2026-07-11-analyze-project-design.md
-    notes: Reverse-engineers an existing repo into project.yaml via parallel Explore subagents; completion via .superpowers/analyze-report.md.
-
-  - id: portable-init
-    name: Portable init + CLI
-    type: backend
-    status: shipped
-    notes: server.js bin entry; diagram-copilot init scaffolds project.yaml/AGENTS.md/.gitignore in any repo and serves; default ./project.yaml.
+    depends: [workflow-orchestration, cli-init]
+    notes: workflow.js ANALYZE_PIPELINE + analyzeProjectPrompt; reverse-engineers an existing repo into project.yaml via parallel Explore subagents; completes on .superpowers/analyze-report.md.
+    flows:
+      - { to: project-loader, kind: data, label: "fills yaml with shipped items" }
+    contracts:
+      - name: POST /api/workflow/analyze-project
+        kind: api
+        description: Starts the single-step analyze-project pipeline
+    tests:
+      - name: analyze-project completes at turn-end once the report artifact appears
+        file: test/workflow.test.js
+      - name: analyze-project completes on stop when project.yaml was modified
+        file: test/workflow.test.js
+      - name: analyze-project stop without yaml changes just stops
+        file: test/workflow.test.js
+      - name: analyze-project rejects a second concurrent workflow
+        file: test/workflow.test.js
 
   # ---- planned work (not yet built) ----
   - id: workflow-execute-viz
