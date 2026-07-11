@@ -294,6 +294,52 @@ function updateProjectItem(yamlPath, itemId, fields) {
   return true;
 }
 
+const ITEM_TYPES = ['frontend', 'backend', 'integration'];
+
+// Append a new planned item at the end of the `items:` list with a
+// line-targeted edit (comment-preserving, like updateProjectItem above).
+// Returns { id } on success or { error } on invalid input.
+function addProjectItem(yamlPath, { name, type, notes } = {}) {
+  name = String(name || '').trim();
+  if (!name) return { error: 'name required' };
+  if (!ITEM_TYPES.includes(type)) return { error: `type must be one of: ${ITEM_TYPES.join(', ')}` };
+  let text;
+  try { text = fs.readFileSync(yamlPath, 'utf8'); } catch { return { error: `Cannot read ${yamlPath}` }; }
+  const lines = text.split('\n');
+  const itemsAt = lines.findIndex((l) => /^items:/.test(l));
+  if (itemsAt === -1) return { error: 'project.yaml has no items: list' };
+
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!base) return { error: 'name must contain letters or numbers' };
+  const ids = new Set();
+  for (const l of lines) {
+    const m = l.match(/^\s*-\s+id:\s*(\S+)/);
+    if (m) ids.add(m[1]);
+  }
+  let id = base;
+  for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+
+  notes = String(notes || '').trim();
+  const block = [
+    `  - id: ${id}`,
+    `    name: ${JSON.stringify(name)}`,
+    `    type: ${type}`,
+    '    status: planned',
+    ...(notes ? [`    notes: ${JSON.stringify(notes)}`] : []),
+  ];
+  // End of the items list = the next top-level key, else EOF; back up over
+  // trailing blank lines so the block lands inside the list.
+  let end = lines.length;
+  for (let i = itemsAt + 1; i < lines.length; i++) {
+    if (/^\S/.test(lines[i])) { end = i; break; }
+  }
+  while (end > itemsAt + 1 && lines[end - 1].trim() === '') end--;
+  if (/^items:\s*\[\s*\]\s*$/.test(lines[itemsAt])) lines[itemsAt] = 'items:';
+  lines.splice(end, 0, ...block);
+  fs.writeFileSync(yamlPath, lines.join('\n'));
+  return { id };
+}
+
 // Plan progress for an item: read docs/superpowers/plans/<id>.md — from the
 // active worktree while the item is mid-pipeline (the plan lives on the
 // branch until merge), else the project dir — and count markdown checkboxes.
@@ -527,4 +573,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { loadProject, computePriority, updateProjectItem, parseWireframeFlows, loadWireframes, planInfo };
+module.exports = { loadProject, computePriority, updateProjectItem, addProjectItem, parseWireframeFlows, loadWireframes, planInfo };
