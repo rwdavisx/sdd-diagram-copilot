@@ -10,6 +10,7 @@ const { execFile } = require('child_process');
 const yaml = require('js-yaml');
 const { createWorkflow, STEPS } = require('./workflow');
 const { startSession } = require('./sessions');
+const { createGraphify } = require('./graphify');
 
 const TYPES = ['frontend', 'backend', 'integration'];
 const STATUSES = ['planned', 'in-progress', 'shipped'];
@@ -396,6 +397,11 @@ function main() {
   const distDir = path.join(__dirname, 'web', 'dist');
   const sseClients = new Set();
 
+  const graphify = createGraphify();
+  // Install check + first freshness pass, fully in the background; a failure
+  // degrades every graphify feature and surfaces via /api/graphify/status.
+  graphify.ensureInstalled().then((ok) => { if (ok) graphify.ensureGraphFresh(projectDir); });
+
   const workflow = createWorkflow({
     projectDir,
     loadItems: () => loadProject(args.yamlPath).items,
@@ -406,6 +412,7 @@ function main() {
       const frame = `event: workflow\ndata: ${JSON.stringify(ev)}\n\n`;
       for (const client of sseClients) client.write(frame);
     },
+    graphify,
   });
 
   // Watch the yaml's directory (watching the file directly breaks on

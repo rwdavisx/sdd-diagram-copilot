@@ -184,3 +184,22 @@ test('status: unavailable / missing / fresh / stale-regenerating + generatedAt',
   gitState.head = 'ccc';
   assert.strictEqual(g.status(dir).state, 'stale-regenerating');
 });
+
+test('sessionContext: names the report and json absolute paths', async () => {
+  const { g, ready } = installed();
+  await ready;
+  const dir = tmpProject();
+  fs.mkdirSync(g.paths(dir).dir, { recursive: true });
+  fs.writeFileSync(g.paths(dir).report, '# report');
+  fs.writeFileSync(g.paths(dir).json, '{}');
+  const ctx = g.sessionContext(dir);
+  assert.ok(ctx.includes(g.paths(dir).report));
+  assert.ok(ctx.includes(g.paths(dir).json));
+  assert.match(ctx, /before exploratory grepping/i);
+});
+
+test('sessionContext: empty string when the graph does not exist', async () => {
+  const { g, ready } = installed();
+  await ready;
+  assert.strictEqual(g.sessionContext(tmpProject()), '');
+});

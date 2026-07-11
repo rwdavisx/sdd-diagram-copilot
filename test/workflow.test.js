@@ -27,7 +27,7 @@ function fakeRunSession(args) {
   return session;
 }
 
-function makeWorkflow() {
+function makeWorkflow(extra = {}) {
   return createWorkflow({
     projectDir: dir,
     loadItems: () => ITEMS,
@@ -36,6 +36,7 @@ function makeWorkflow() {
     updateItem: (id, fields) => updates.push([id, fields]),
     listWorktrees: () => worktrees,
     isBranchMerged: (_dir, branch) => merged.includes(branch),
+    ...extra,
   });
 }
 
@@ -378,4 +379,38 @@ test('startStep passes resolved model/effort to runSession', () => {
   wf.start('feat-a');
   assert.strictEqual(lastSession().args.model, 'sonnet');
   assert.strictEqual(lastSession().args.effort, 'high');
+});
+
+test('startStep appends graph context to the prompt and refreshes the graph', () => {
+  const refreshed = [];
+  const wf = makeWorkflow({
+    graphify: {
+      ensureGraphFresh: (d) => refreshed.push(d),
+      sessionContext: () => '\n\nGRAPH POINTER',
+      mcpServers: () => null,
+    },
+  });
+  wf.start('feat-a');
+  assert.ok(lastSession().args.initialPrompt.endsWith('GRAPH POINTER'));
+  assert.deepStrictEqual(refreshed, [dir]);
+});
+
+test('no graphify dep -> prompt is exactly the step prompt (unchanged behavior)', () => {
+  const wf = makeWorkflow();
+  wf.start('feat-a');
+  assert.ok(lastSession().args.initialPrompt.startsWith('You are working on the item "feat-a"'));
+  assert.ok(!lastSession().args.initialPrompt.includes('GRAPH'));
+});
+
+test('a throwing graphify never blocks the session (enhancer, not a gate)', () => {
+  const wf = makeWorkflow({
+    graphify: {
+      ensureGraphFresh: () => { throw new Error('boom'); },
+      sessionContext: () => '',
+      mcpServers: () => null,
+    },
+  });
+  const r = wf.start('feat-a');
+  assert.ok(!r.error);
+  assert.strictEqual(sessions.length, 1);
 });

@@ -123,10 +123,20 @@ function createGraphify({
     return { state: fresh ? 'fresh' : 'stale-regenerating', generatedAt };
   }
 
+  // One paragraph appended to each workflow session's initial prompt. Absolute
+  // main-checkout paths so sessions running inside a worktree still find the
+  // shared graph. Empty string when there is nothing to point at.
+  function sessionContext(projectDir) {
+    const p = paths(projectDir);
+    if (!fs.existsSync(p.report) || !fs.existsSync(p.json)) return '';
+    return `\n\nA Graphify knowledge graph of this codebase is available. For instant orientation read ${p.report} (key concepts, connections, suggested questions); the full graph is at ${p.json}. Consult the graph before exploratory grepping.`;
+  }
+
   return {
     ensureInstalled,
     paths,
     ensureGraphFresh,
+    sessionContext,
     status,
     get available() { return available; },
     get installHint() { return installHint; },

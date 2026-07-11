@@ -178,6 +178,7 @@ function createWorkflow({
   loadWorkflowConfig = () => null,
   listWorktrees = () => defaultListWorktrees(projectDir),
   isBranchMerged = defaultIsBranchMerged,
+  graphify = { ensureGraphFresh: () => {}, sessionContext: () => '', mcpServers: () => null },
 }) {
   const stateFile = path.join(projectDir, '.superpowers', 'workflow.json');
   const transcript = [];
@@ -275,8 +276,12 @@ function createWorkflow({
     if (def.onStart) def.onStart(checkCtx());
     record({ kind: 'step-start', step: stepId });
     const { model, effort } = resolveStepConfig(loadWorkflowConfig(), stepId, item);
+    // Graphify is an enhancer, never a gate — any failure means "no graph".
+    try { graphify.ensureGraphFresh(projectDir); } catch { /* degrade */ }
+    let graphCtx = '';
+    try { graphCtx = graphify.sessionContext(projectDir) || ''; } catch { /* degrade */ }
     session = runSession({
-      initialPrompt: def.prompt(item),
+      initialPrompt: def.prompt(item) + graphCtx,
       cwd: stepCwd(stepId),
       model,
       effort,
