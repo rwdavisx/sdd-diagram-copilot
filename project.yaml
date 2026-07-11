@@ -57,7 +57,7 @@ items:
     type: frontend
     status: shipped
     depends: [app-shell, workflow-orchestration]
-    notes: web/src/WorkflowView.jsx; pipeline stepper, live transcript (non-durable), start/continue/stop/input controls.
+    notes: web/src/WorkflowView.jsx; pipeline stepper, live transcript (non-durable), start/continue/stop/input controls, New idea form (backlog capture / brainstorm-now via POST /api/items).
 
   - id: detail-panel
     name: Item detail panel
@@ -84,6 +84,12 @@ items:
       - name: GET /api/spec?path=
         kind: api
         description: Raw spec markdown; path-traversal guarded (403), 404 if missing
+      - name: POST /api/items
+        kind: api
+        description: Seed a new planned item (the UI's one write affordance, from the Workflow tab's New idea form)
+        schema: |
+          request:  { name: string, type: frontend|backend|integration, notes?: string }
+          response: { id: string }   # kebab-cased name, -2/-3... suffix on collision; 400 on bad input
       - name: GET /api/events
         kind: event
         description: SSE stream shared by the whole page
@@ -99,7 +105,7 @@ items:
     name: project.yaml loader + writer
     type: backend
     status: shipped
-    notes: server.js:63-149 loadProject (js-yaml, validation, wireframe path resolution, wfrev mtime), server.js:277-295 updateProjectItem (line-targeted comment-preserving writes), planInfo checkbox counts.
+    notes: server.js:63-149 loadProject (js-yaml, validation, wireframe path resolution, wfrev mtime), server.js updateProjectItem + addProjectItem (line-targeted comment-preserving writes), planInfo checkbox counts.
     contracts:
       - name: project.yaml schema
         kind: db
@@ -121,6 +127,21 @@ items:
         file: test/yaml-update.test.js
       - name: planInfo counts plan checkboxes, preferring the active worktree copy
         file: test/yaml-update.test.js
+      - name: "appends a planned item inside the items list, not after workflow:"
+        file: test/add-item.test.js
+        status: passing
+      - name: suffixes the id on collision
+        file: test/add-item.test.js
+        status: passing
+      - name: omits notes when blank
+        file: test/add-item.test.js
+        status: passing
+      - name: handles an empty inline items list
+        file: test/add-item.test.js
+        status: passing
+      - name: rejects bad input and leaves the file alone
+        file: test/add-item.test.js
+        status: passing
       - name: detects a convention-path wireframe; others stay null
         file: test/wireframes.test.js
       - name: declared wireframe that is missing on disk is an error and nulled
