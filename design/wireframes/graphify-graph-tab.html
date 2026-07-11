@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Graph tab — Graphify knowledge graph</title>
+<style>
+  body { margin: 0; width: 800px; font-family: system-ui, sans-serif; background: #f7f8fa; color: #1f2430; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: #fff; border-bottom: 1px solid #e3e6eb; }
+  header h1 { font-size: 16px; margin: 0; flex: 1; }
+  .chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: #e6f4ec; color: #2fa864; border: 1px solid #bfe4cf; }
+  .chip.stale { background: #fdf3e2; color: #b07a1e; border-color: #f0dcb2; }
+  button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid #cdd3dc; background: #fff; cursor: pointer; }
+  .frame { margin: 20px; height: 430px; border: 1px dashed #b9c0cc; border-radius: 8px; background: #fff;
+           display: flex; align-items: center; justify-content: center; color: #7c8595; font-size: 14px; text-align: center; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Graph — codebase knowledge graph</h1>
+    <span class="chip" id="graph-status" data-flow-to="graphify-refresh" data-flow-kind="api">fresh · 2 min ago</span>
+    <button id="regen-btn" data-flow-to="graphify-refresh" data-flow-kind="api">Regenerate</button>
+  </header>
+  <div class="frame">
+    &lt;iframe&gt; Graphify graph.html — interactive node/edge explorer<br>
+    (served via GET /api/graphify/graph.html)
+  </div>
+</body>
+</html>

@@ -391,3 +391,59 @@ items:
     spec: docs/superpowers/specs/2026-07-09-workflow-tab-design.md
     depends: [workflow-execute-viz]
     notes: Finish buttons (merge/PR/keep/discard), resume/retry, interrupted/error states.
+  - id: graphify-integration
+    name: "Graphify Integration"
+    type: integration
+    status: in-progress
+    spec: specs/graphify-integration.md
+    depends: [graphify-install, graphify-refresh, graphify-session-context, graphify-mcp-attach, graphify-graph-tab]
+    notes: "Umbrella: Graphify codebase knowledge graph feeds workflow LLM sessions (better + quicker code knowledge). https://github.com/Graphify-Labs/graphify"
+  - id: graphify-install
+    name: "Graphify Auto-Install"
+    type: backend
+    status: planned
+    spec: specs/graphify-integration.md
+    notes: "On server start / first project open: if `graphify` not on PATH, auto-install via `uv tool install graphifyy` (fallback: pipx). Install failure degrades gracefully â€” sessions run without graph, UI shows the install hint. Also `uv tool upgrade` periodically to stay current."
+  - id: graphify-refresh
+    name: "Graphify Refresh Pipeline"
+    type: backend
+    status: planned
+    spec: specs/graphify-integration.md
+    depends: [graphify-install]
+    notes: "At session start: compare project HEAD/dirty state to graph's recorded commit; if stale, run `graphify .` in background (non-blocking). One shared graph in the main checkout; worktree sessions point at it. Session starts immediately with the current graph."
+    contracts:
+      - name: ensureGraphFresh(projectDir)
+        kind: api
+        description: staleness check + background regen; never blocks session start
+        schema: |
+          in:  projectDir
+          out: { state: fresh | stale-regenerating | missing }
+  - id: graphify-session-context
+    name: "Graph Context in Session Prompt"
+    type: backend
+    status: planned
+    spec: specs/graphify-integration.md
+    depends: [graphify-refresh]
+    notes: "Inject a pointer into each workflow session's initial prompt: GRAPH_REPORT.md location + 'consult the graph before exploring'. Instant orientation, zero tool calls."
+  - id: graphify-graph-tab
+    name: "Graph Tab (embed graph.html)"
+    type: frontend
+    status: planned
+    spec: specs/graphify-integration.md
+    depends: [graphify-refresh]
+    notes: "New top-level tab embedding Graphify's interactive graph.html in an iframe, served by the diagram-copilot server from the project's graph output. Status chip: fresh / regenerating / unavailable."
+    contracts:
+      - name: GET /api/graphify/graph.html
+        kind: api
+        description: serves the project's current Graphify interactive graph (404 if not yet generated)
+      - name: GET /api/graphify/status
+        kind: api
+        schema: |
+          response: { state: fresh | stale-regenerating | missing | unavailable, generatedAt: iso8601 | null }
+  - id: graphify-mcp-attach
+    name: "Graphify MCP Server per Session"
+    type: integration
+    status: planned
+    spec: specs/graphify-integration.md
+    depends: [graphify-refresh]
+    notes: "Attach Graphify's MCP server (stdio) to each Agent SDK session via mcpServers option in sessions.js, giving the LLM live graph query tools (callers, shortest-path, explain-entity)."
