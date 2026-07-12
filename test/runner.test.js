@@ -95,3 +95,47 @@ test('restart: running -> stopped -> running again with a new pid', async (t) =>
     return d?.status === 'running' && d.pid !== pid1;
   }), 'should be running under a new pid');
 });
+
+test('list: stopped by default, external when the port is occupied by someone else', async (t) => {
+  const netMod = require('net');
+  const port = 41573;
+  const ext = netMod.createServer().listen(port, '127.0.0.1');
+  t.after(() => ext.close());
+  await new Promise((r) => ext.once('listening', r));
+  const { runner } = makeRunner([
+    { id: 'a', name: 'A', run: { cmd: node('setInterval(()=>{},1000)') } },
+    { id: 'b', name: 'B', run: { cmd: node('setInterval(()=>{},1000)'), port } },
+  ]);
+  t.after(() => runner.shutdownSync());
+  const entries = Object.fromEntries((await runner.list()).map((e) => [e.id, e]));
+  assert.equal(entries.a.status, 'stopped');
+  assert.equal(entries.b.status, 'external');
+  assert.equal(runner.stop('b').code, 409, 'cannot stop an external process');
+});
+
+test('list: stale flag when a live service config changes', async (t) => {
+  const services = [{ id: 'svc', name: 'Svc', run: { cmd: node('setInterval(()=>{},1000)') } }];
+  const { runner } = makeRunner(services);
+  t.after(() => runner.shutdownSync());
+  runner.start('svc');
+  await until(async () => (await runner.get('svc'))?.status === 'running');
+  assert.equal((await runner.list())[0].stale, false);
+  services[0] = { ...services[0], run: { ...services[0].run, cmd: services[0].run.cmd + ' ' } };
+  assert.equal((await runner.list())[0].stale, true);
+});
+
+test('startAll starts in dependency order; stopAll stops everything', async (t) => {
+  const services = [
+    { id: 'web', name: 'Web', depends: ['api'], run: { cmd: node('setInterval(()=>{},1000)') } },
+    { id: 'api', name: 'Api', run: { cmd: node('setInterval(()=>{},1000)') } },
+  ];
+  const { runner, events } = makeRunner(services);
+  t.after(() => runner.shutdownSync());
+  await runner.startAll();
+  const starting = events.filter((e) => e.status === 'starting').map((e) => e.id);
+  assert.deepEqual(starting, ['api', 'web'], 'api (dependency) must start before web');
+  const listed = await runner.list();
+  assert.ok(listed.every((e) => e.status === 'running'), JSON.stringify(listed));
+  await runner.stopAll();
+  assert.ok((await runner.list()).every((e) => e.status === 'stopped'));
+});

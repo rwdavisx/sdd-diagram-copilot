@@ -132,10 +132,69 @@ function createRunner({ projectDir, loadServices, broadcast = () => {}, readyDel
     return start(id);
   }
 
+  async function entry(svc) {
+    const invalid = validateRun(svc.run);
+    const p = procs.get(svc.id);
+    const port = (svc.run && Number.isInteger(svc.run.port)) ? svc.run.port : null;
+    if (alive(p)) {
+      return {
+        id: svc.id, name: svc.name, status: p.status, pid: p.pid, port,
+        startedAt: p.startedAt, stale: p.config !== JSON.stringify(svc.run), invalid,
+      };
+    }
+    // Not ours: a listener on the declared port is some external process.
+    if (port && await portListening(port)) {
+      return { id: svc.id, name: svc.name, status: 'external', pid: null, port, startedAt: null, stale: false, invalid };
+    }
+    return { id: svc.id, name: svc.name, status: p ? p.status : 'stopped', pid: null, port, startedAt: null, stale: false, invalid };
+  }
+
+  function list() {
+    return Promise.all(loadServices().map(entry));
+  }
+
   async function get(id) {
+    const svc = loadServices().find((s) => s.id === id);
+    if (!svc) return null;
     const p = procs.get(id);
-    if (!p) return null;
-    return { id, status: p.status, pid: p.pid, startedAt: p.startedAt, output: p.output };
+    return { ...(await entry(svc)), output: p ? p.output : [] };
+  }
+
+  // Kahn-ish topological order over `depends`, restricted to services.
+  // A cycle just appends the remainder — start order degrades, never blocks.
+  function topoOrder(services) {
+    const ids = new Set(services.map((s) => s.id));
+    const order = [];
+    const done = new Set();
+    while (order.length < services.length) {
+      const ready = services.filter((s) => !done.has(s.id) &&
+        (Array.isArray(s.depends) ? s.depends : []).filter((d) => ids.has(d)).every((d) => done.has(d)));
+      if (!ready.length) {
+        for (const s of services) if (!done.has(s.id)) { order.push(s); done.add(s.id); }
+        break;
+      }
+      for (const s of ready) { order.push(s); done.add(s.id); }
+    }
+    return order;
+  }
+
+  async function startAll() {
+    for (const svc of topoOrder(loadServices())) {
+      if (alive(procs.get(svc.id))) continue;
+      if ((await entry(svc)).status === 'external') continue;
+      if (start(svc.id).error) continue; // invalid config — skip, banner already reports it
+      await waitWhile(svc.id, (s) => s === 'starting'); // dependents wait for running/crashed
+    }
+    return { ok: true };
+  }
+
+  async function stopAll() {
+    for (const svc of topoOrder(loadServices()).reverse()) {
+      if (!alive(procs.get(svc.id))) continue;
+      stop(svc.id);
+      await waitWhile(svc.id, (s) => s === 'starting' || s === 'running');
+    }
+    return { ok: true };
   }
 
   function shutdownSync() {
@@ -144,7 +203,7 @@ function createRunner({ projectDir, loadServices, broadcast = () => {}, readyDel
     }
   }
 
-  return { start, stop, restart, get, shutdownSync };
+  return { start, stop, restart, get, list, startAll, stopAll, shutdownSync };
 }
 
 module.exports = { createRunner, validateRun };
