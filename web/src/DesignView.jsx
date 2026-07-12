@@ -13,7 +13,7 @@ import DiagramView from './DiagramView.jsx';
 
 const STATUS_BADGE = { running: 'info', done: 'success', stopped: 'neutral', 'needs-attention': 'warning', interrupted: 'warning' };
 
-export default function DesignView({ items, flows, selectedId, onSelect }) {
+export default function DesignView({ items, flows, selectedId, onSelect, servicesById }) {
   const wf = useWorkflowFeed();
   const [startError, setStartError] = useState(null);
   const [iterateOn, setIterateOn] = useState(null); // item id the chat is focused on
@@ -76,7 +76,7 @@ export default function DesignView({ items, flows, selectedId, onSelect }) {
           <Button label="Open chat" tooltip="Open chat" isIconOnly variant="ghost" size="sm" icon={<span>»</span>} onClick={toggleChat} />
         </div>
         <div className="design-canvas">
-          <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} active={activeWorkflow} />
+          <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} active={activeWorkflow} servicesById={servicesById} />
         </div>
       </div>
     );
@@ -124,7 +124,7 @@ export default function DesignView({ items, flows, selectedId, onSelect }) {
       </div>
       <div className="pane-resizer" onPointerDown={onResizeDown} />
       <div className="design-canvas">
-        <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} active={activeWorkflow} />
+        <DiagramView items={items} flows={flows} selectedId={selectedId} onSelect={onSelect} active={activeWorkflow} servicesById={servicesById} />
       </div>
     </div>
   );

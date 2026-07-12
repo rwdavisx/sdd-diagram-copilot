@@ -4,7 +4,7 @@ import dagre from 'dagre';
 import { Badge } from '@astryxdesign/core/Badge';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Spinner } from '@astryxdesign/core/Spinner';
-import { TypeBadge, StatusChip, SpecFlag, TestChip, PlanChip } from './chips.jsx';
+import { TypeBadge, StatusChip, SpecFlag, TestChip, PlanChip, ServiceDot } from './chips.jsx';
 import { STEP_INFO } from './useWorkflowFeed.jsx';
 import '@xyflow/react/dist/style.css';
 
@@ -77,6 +77,7 @@ const ItemNode = memo(function ItemNode({ id, data }) {
         <SpecFlag spec={data.item.spec} />
         <PlanChip plan={data.item.plan} status={data.item.status} />
         <TestChip tests={data.item.tests} />
+        <ServiceDot service={data.service} />
       </HStack>
       {data.active && <ActiveBadge active={data.active} />}
       {data.item.notes && <div className="flow-node-notes">{data.item.notes}</div>}
@@ -183,6 +184,7 @@ const ScreenNode = memo(function ScreenNode({ id, data }) {
         <StatusChip status={data.item.status} />
         <PlanChip plan={data.item.plan} status={data.item.status} />
         <TestChip tests={data.item.tests} />
+        <ServiceDot service={data.service} />
       </HStack>
       {data.active && <ActiveBadge active={data.active} />}
       <div ref={frameRef} className="wf-thumb" style={{ width: dim.w * WF_SCALE, height: dim.h * WF_SCALE }}>
@@ -376,7 +378,7 @@ function edgeChrome(kind) {
   };
 }
 
-export default function DiagramView({ items, flows = [], selectedId, onSelect, active = null }) {
+export default function DiagramView({ items, flows = [], selectedId, onSelect, active = null, servicesById = {} }) {
   const [sizes, setSizes] = useState({});
   const onMeasure = useCallback((id, size) => {
     const sig = (s) => `${Math.round(s.w)}x${Math.round(s.h)}|${Object.entries(s.anchorY || {}).map(([k, v]) => `${k}:${Math.round(v)}`).join(',')}`;
@@ -427,6 +429,7 @@ export default function DiagramView({ items, flows = [], selectedId, onSelect, a
         selected: item.id === selectedId,
         active: active && active.itemId === item.id ? active : null,
         onMeasure,
+        service: servicesById[item.id] || null,
         ...(item.wireframe ? { anchorIds: [...new Set(anchorsByItem[item.id] || [])] } : {}),
       },
     }));
@@ -496,7 +499,7 @@ export default function DiagramView({ items, flows = [], selectedId, onSelect, a
     }));
 
     return { nodes: [...laneNodes, ...itemNodes], edges: [...dependEdges, ...anchoredEdges, ...flowEdges] };
-  }, [items, flows, sizes, selectedId, onMeasure, active]);
+  }, [items, flows, sizes, selectedId, onMeasure, active, servicesById]);
 
   return (
     <div className="diagram">

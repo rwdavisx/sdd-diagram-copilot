@@ -6,7 +6,8 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Markdown } from '@astryxdesign/core/Markdown';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { TypeBadge, TestChip, STATUS_VARIANT, TEST_STATUS_VARIANT } from './chips.jsx';
+import { TypeBadge, TestChip, ServiceDot, STATUS_VARIANT, TEST_STATUS_VARIANT } from './chips.jsx';
+import { svcPost } from './useServices.jsx';
 
 const WF_W = 800; // wireframes are authored at 800px
 
@@ -60,7 +61,41 @@ function WireframeViewer({ item, panelWidth }) {
   );
 }
 
-export default function DetailPanel({ item, items, width, onSelect, onClose, onCollapse, onStartWorkflow }) {
+// Controls + recent output for an item with a run: block. Output comes from
+// GET /api/services/:id, refetched whenever the live status flips.
+function ServiceSection({ item, service }) {
+  const [output, setOutput] = useState([]);
+  useEffect(() => {
+    if (!service) return;
+    let cancelled = false;
+    fetch(`/api/services/${encodeURIComponent(item.id)}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setOutput(d.output || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [item.id, service?.status]);
+  if (!service) return null;
+  const live = service.status === 'running' || service.status === 'starting';
+  return (
+    <VStack gap={1}>
+      <HStack gap={2} vAlign="center">
+        <Text type="label">Service</Text>
+        <ServiceDot service={service} withLabel />
+        {service.port && <Text type="code">:{service.port}</Text>}
+        {service.stale && <Badge variant="warning" label="config changed — restart" />}
+      </HStack>
+      <HStack gap={1}>
+        <Button label="Start" size="sm" variant="secondary" isDisabled={live || service.status === 'external' || !!service.invalid} onClick={() => svcPost(item.id, 'start')} />
+        <Button label="Stop" size="sm" variant="secondary" isDisabled={!live} onClick={() => svcPost(item.id, 'stop')} />
+        <Button label="Restart" size="sm" variant="secondary" isDisabled={service.status === 'external' || !!service.invalid} onClick={() => svcPost(item.id, 'restart')} />
+      </HStack>
+      {service.invalid && <Text type="supporting" as="p">Invalid run config: {service.invalid}</Text>}
+      {output.length > 0 && <pre className="schema-body">{output.slice(-40).join('\n')}</pre>}
+    </VStack>
+  );
+}
+
+export default function DetailPanel({ item, items, width, service, onSelect, onClose, onCollapse, onStartWorkflow }) {
   const [spec, setSpec] = useState(null); // { text } | { error } | null while loading
 
   useEffect(() => {
@@ -103,6 +138,8 @@ export default function DetailPanel({ item, items, width, onSelect, onClose, onC
             onClick={() => onStartWorkflow(item.id)}
           />
         </HStack>
+
+        <ServiceSection item={item} service={service} />
 
         {item.notes && <Text type="supporting" as="p">{item.notes}</Text>}
 

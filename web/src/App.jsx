@@ -30,6 +30,7 @@ export default function App() {
   const [detailW, onDetailResize] = usePaneWidth('dc-detail-w', 380, { min: 300, max: 720, fromRight: true });
   const [detailOpen, toggleDetail] = usePersistedOpen('dc-detail-open');
   const services = useServices();
+  const servicesById = Object.fromEntries(services.map((s) => [s.id, s]));
 
   const refetch = useCallback(() => {
     fetch('/api/project')
@@ -97,8 +98,8 @@ export default function App() {
       )}
 
       <main>
-        {view === 'design' && <DesignView items={items} flows={data.flows || []} selectedId={selectedId} onSelect={setSelectedId} />}
-        {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'design' && <DesignView items={items} flows={data.flows || []} selectedId={selectedId} onSelect={setSelectedId} servicesById={servicesById} />}
+        {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} servicesById={servicesById} />}
         {view === 'schemas' && <SchemaView items={items} onSelect={setSelectedId} />}
         {view === 'tests' && <TestsView items={items} onSelect={setSelectedId} />}
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
@@ -108,7 +109,7 @@ export default function App() {
         {selected && detailOpen && (
           <>
             <div className="pane-resizer" onPointerDown={onDetailResize} />
-            <DetailPanel item={selected} items={items} width={detailW} onSelect={setSelectedId} onClose={() => setSelectedId(null)} onCollapse={toggleDetail} onStartWorkflow={startWorkflow} />
+            <DetailPanel item={selected} items={items} width={detailW} service={servicesById[selected.id]} onSelect={setSelectedId} onClose={() => setSelectedId(null)} onCollapse={toggleDetail} onStartWorkflow={startWorkflow} />
           </>
         )}
         {selected && !detailOpen && (
