@@ -12,6 +12,8 @@ import DesignView from './DesignView.jsx';
 import SchemaView from './SchemaView.jsx';
 import TestsView from './TestsView.jsx';
 import GraphView from './GraphView.jsx';
+import RunView from './RunView.jsx';
+import { useServices } from './useServices.jsx';
 import { Button } from '@astryxdesign/core/Button';
 import { usePaneWidth, usePersistedOpen } from './resize.jsx';
 import { onServerEvent } from './useWorkflowFeed.jsx';
@@ -27,6 +29,7 @@ export default function App() {
   const [loadError, setLoadError] = useState(null);
   const [detailW, onDetailResize] = usePaneWidth('dc-detail-w', 380, { min: 300, max: 720, fromRight: true });
   const [detailOpen, toggleDetail] = usePersistedOpen('dc-detail-open');
+  const services = useServices();
 
   const refetch = useCallback(() => {
     fetch('/api/project')
@@ -79,6 +82,7 @@ export default function App() {
           <Tab value="priority" label="Priority" />
           <Tab value="workflow" label="Workflow" />
           <Tab value="graph" label="Graph" />
+          <Tab value="run" label="Run" />
         </TabList>
       </header>
 
@@ -100,6 +104,7 @@ export default function App() {
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
         {view === 'workflow' && <WorkflowView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'graph' && <GraphView />}
+        {view === 'run' && <RunView services={services} onSelect={setSelectedId} />}
         {selected && detailOpen && (
           <>
             <div className="pane-resizer" onPointerDown={onDetailResize} />

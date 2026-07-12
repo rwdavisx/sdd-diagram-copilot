@@ -52,4 +52,17 @@ export function SpecFlag({ spec }) {
     : <Text type="supporting" size="xsm"><em>no spec</em></Text>;
 }
 
+const SERVICE_VARIANT = { stopped: 'neutral', starting: 'warning', running: 'success', crashed: 'error', external: 'neutral' };
+
+// Live process status for items with a run: block; nothing otherwise.
+export function ServiceDot({ service, withLabel = false }) {
+  if (!service) return null;
+  return (
+    <>
+      <StatusDot variant={SERVICE_VARIANT[service.status] || 'neutral'} label={`service ${service.status}`} />
+      {withLabel && <Text type="supporting" size="xsm">{service.status}</Text>}
+    </>
+  );
+}
+
 export { STATUS_VARIANT, TEST_STATUS_VARIANT };
