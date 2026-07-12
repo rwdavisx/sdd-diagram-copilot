@@ -26,6 +26,19 @@ function portListening(port) {
   });
 }
 
+// entry()'s external-listener check runs on every list(), and every SSE event
+// triggers a list() refetch from every open tab — cache probes briefly so
+// N tabs x M services doesn't mean N x M fresh TCP connects per event.
+const PORT_CACHE_MS = 1000;
+const portCache = new Map(); // port -> { at, result: Promise<bool> }
+function portListeningCached(port) {
+  const c = portCache.get(port);
+  if (c && Date.now() - c.at < PORT_CACHE_MS) return c.result;
+  const result = portListening(port);
+  portCache.set(port, { at: Date.now(), result });
+  return result;
+}
+
 // npm/vite wrap the real server in child processes — killing just the shell
 // pid leaks the tree, so always kill the whole tree.
 function killTree(pid) {
@@ -128,6 +141,9 @@ function createRunner({ projectDir, loadServices, broadcast = () => {}, readyDel
       const r = stop(id);
       if (r.error) return r;
       await waitWhile(id, (s) => s === 'starting' || s === 'running');
+      // waitWhile can time out with the old process still alive (ignored SIGTERM) —
+      // starting anyway would orphan the old procs entry, leaking the tree forever.
+      if (alive(procs.get(id))) return { error: `"${id}" did not exit within the stop timeout`, code: 409 };
     }
     return start(id);
   }
@@ -143,7 +159,7 @@ function createRunner({ projectDir, loadServices, broadcast = () => {}, readyDel
       };
     }
     // Not ours: a listener on the declared port is some external process.
-    if (port && await portListening(port)) {
+    if (port && await portListeningCached(port)) {
       return { id: svc.id, name: svc.name, status: 'external', pid: null, port, startedAt: null, stale: false, invalid };
     }
     return { id: svc.id, name: svc.name, status: p ? p.status : 'stopped', pid: null, port, startedAt: null, stale: false, invalid };
@@ -179,13 +195,19 @@ function createRunner({ projectDir, loadServices, broadcast = () => {}, readyDel
   }
 
   async function startAll() {
-    for (const svc of topoOrder(loadServices())) {
+    const services = loadServices();
+    const ids = new Set(services.map((s) => s.id));
+    const failed = new Set();
+    for (const svc of topoOrder(services)) {
       if (alive(procs.get(svc.id))) continue;
+      const deps = (Array.isArray(svc.depends) ? svc.depends : []).filter((d) => ids.has(d));
+      if (deps.some((d) => failed.has(d))) { failed.add(svc.id); continue; } // dependency crashed/skipped — don't cascade-start
       if ((await entry(svc)).status === 'external') continue;
       if (start(svc.id).error) continue; // invalid config — skip, banner already reports it
       await waitWhile(svc.id, (s) => s === 'starting'); // dependents wait for running/crashed
+      if ((procs.get(svc.id) || {}).status === 'crashed') failed.add(svc.id);
     }
-    return { ok: true };
+    return failed.size ? { ok: true, failed: [...failed] } : { ok: true };
   }
 
   async function stopAll() {

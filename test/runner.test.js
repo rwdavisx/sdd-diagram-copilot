@@ -140,6 +140,20 @@ test('startAll starts in dependency order; stopAll stops everything', async (t) 
   assert.ok((await runner.list()).every((e) => e.status === 'stopped'));
 });
 
+test('startAll: a crashing dependency stops dependents from starting', async (t) => {
+  const services = [
+    { id: 'web', name: 'Web', depends: ['api'], run: { cmd: node('setInterval(()=>{},1000)') } },
+    { id: 'api', name: 'Api', run: { cmd: node('process.exit(1)') } },
+  ];
+  const { runner, events } = makeRunner(services);
+  t.after(() => runner.shutdownSync());
+  const r = await runner.startAll();
+  assert.deepEqual(new Set(r.failed), new Set(['api', 'web']), JSON.stringify(r));
+  const starting = events.filter((e) => e.status === 'starting').map((e) => e.id);
+  assert.deepEqual(starting, ['api'], 'web must never have been started');
+  assert.equal((await runner.get('web')).status, 'stopped');
+});
+
 test('loadProject validates run blocks', () => {
   const fs = require('fs');
   const os = require('os');

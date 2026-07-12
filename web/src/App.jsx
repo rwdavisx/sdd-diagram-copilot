@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -30,7 +30,7 @@ export default function App() {
   const [detailW, onDetailResize] = usePaneWidth('dc-detail-w', 380, { min: 300, max: 720, fromRight: true });
   const [detailOpen, toggleDetail] = usePersistedOpen('dc-detail-open');
   const services = useServices();
-  const servicesById = Object.fromEntries(services.map((s) => [s.id, s]));
+  const servicesById = useMemo(() => Object.fromEntries(services.map((s) => [s.id, s])), [services]);
 
   const refetch = useCallback(() => {
     fetch('/api/project')
