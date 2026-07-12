@@ -1,8 +1,10 @@
-// graphify.js — Graphify codebase-knowledge-graph integration: auto-install,
-// background refresh, session prompt pointer, per-session MCP config, status.
-// An enhancer, never a gate: every function degrades to a no-op / empty value
-// when the CLI or graph is unavailable.
+// graphify.js — Graphify codebase-knowledge-graph integration: auto-install
+// (bootstrapping uv itself when missing), background refresh, session prompt
+// pointer, per-session MCP config, status. The CLI is a required dependency:
+// server startup fails if ensureInstalled() cannot make it available. The
+// graph itself stays async — functions degrade to empty values until it exists.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile, execFileSync, spawn } = require('child_process');
@@ -14,9 +16,12 @@ function createGraphify({
   execFileFn = execFile,
   execFileSyncFn = execFileSync,
   spawnFn = spawn,
+  existsFn = fs.existsSync,
+  env = process.env,
 } = {}) {
   let available = false;
-  let hasUv = false;
+  let uvCmd = null; // resolved uv invocation (bare name or absolute path), null if absent
+  let graphifyCmd = 'graphify';
   let installHint = null;
 
   // Resolves true iff the command ran and exited 0. ENOENT -> false.
@@ -24,21 +29,45 @@ function createGraphify({
     execFileFn(cmd, args, { windowsHide: true }, (err) => resolve(!err));
   });
 
-  // Check `graphify` on PATH; missing -> uv tool install, then pipx. On any
-  // success, fire a background upgrade so the tool stays current. Failure is
-  // logged once with a hint surfaced via installHint (shown by /api/graphify/status).
+  // uv's installer (and uv tool install / pipx) drop binaries in ~/.local/bin,
+  // which is not on this process's PATH right after a fresh install — so
+  // resolve via PATH first, then check there explicitly.
+  const localBin = (name) => path.join(os.homedir(), '.local', 'bin',
+    process.platform === 'win32' ? `${name}.exe` : name);
+  const resolveCmd = async (name) => {
+    if (await run(name, ['--version'])) return name;
+    const p = localBin(name);
+    return (existsFn(p) && await run(p, ['--version'])) ? p : null;
+  };
+
+  // Graphify is a required dependency: resolve or install the CLI,
+  // bootstrapping uv itself via the official installer when missing. pipx
+  // stays as a fallback. Only a full-chain failure (network, blocked
+  // installer) returns false — the server treats that as fatal at startup.
   async function ensureInstalled() {
-    hasUv = await run('uv', ['--version']);
-    if (await run('graphify', ['--version'])) available = true;
-    else if (hasUv && await run('uv', ['tool', 'install', 'graphifyy'])) available = true;
-    else if (await run('pipx', ['install', 'graphifyy'])) available = true;
-    if (!available) {
-      installHint = 'Graphify could not be installed (no uv or pipx found, or install failed). Install uv or pipx, then run: uv tool install graphifyy';
+    uvCmd = await resolveCmd('uv');
+    let g = await resolveCmd('graphify');
+    if (!g) {
+      if (!uvCmd) {
+        if (process.platform === 'win32') {
+          await run('powershell', ['-ExecutionPolicy', 'ByPass', '-c', 'irm https://astral.sh/uv/install.ps1 | iex']);
+        } else {
+          await run('sh', ['-c', 'curl -LsSf https://astral.sh/uv/install.sh | sh']);
+        }
+        uvCmd = await resolveCmd('uv');
+      }
+      if (uvCmd && await run(uvCmd, ['tool', 'install', 'graphifyy'])) g = (await resolveCmd('graphify')) || 'graphify';
+      else if (await run('pipx', ['install', 'graphifyy'])) g = (await resolveCmd('graphify')) || 'graphify';
+    }
+    if (!g) {
+      installHint = 'Graphify is required but could not be installed (uv bootstrap or `uv tool install graphifyy` failed). Install uv (https://astral.sh/uv), run `uv tool install graphifyy`, then relaunch.';
       log(installHint);
       return false;
     }
+    graphifyCmd = g;
+    available = true;
     // Fire-and-forget upgrade, once per server start; a failed upgrade is fine.
-    run(hasUv ? 'uv' : 'pipx', hasUv ? ['tool', 'upgrade', 'graphifyy'] : ['upgrade', 'graphifyy']);
+    run(uvCmd || 'pipx', uvCmd ? ['tool', 'upgrade', 'graphifyy'] : ['upgrade', 'graphifyy']);
     return true;
   }
 
@@ -79,25 +108,38 @@ function createGraphify({
     }
   }
 
+  // Doc/image extraction and community naming need an LLM key; without one a
+  // bare `graphify .` exits 1. Keyless fallback: `--code-only` (local AST)
+  // followed by `cluster-only --no-label`, which produces graph.html and
+  // GRAPH_REPORT.md without any LLM.
+  const LLM_KEYS = ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'MOONSHOT_API_KEY',
+    'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'DEEPSEEK_API_KEY'];
+
   function regenerate(projectDir, stampAtSpawn) {
     if (regenerating.has(projectDir)) return;
     regenerating.add(projectDir);
     ensureGitignored(projectDir);
-    let child;
-    try {
-      child = spawnFn('graphify', ['.'], { cwd: projectDir, stdio: 'ignore', windowsHide: true });
-    } catch { regenerating.delete(projectDir); return; }
-    child.on('error', () => regenerating.delete(projectDir));
-    child.on('exit', (code) => {
-      regenerating.delete(projectDir);
-      if (code === 0) {
+    const stages = LLM_KEYS.some((k) => env[k])
+      ? [['.']]
+      : [['.', '--code-only'], ['cluster-only', '.', '--no-label']];
+    const runStage = (i) => {
+      let child;
+      try {
+        child = spawnFn(graphifyCmd, stages[i], { cwd: projectDir, stdio: 'ignore', windowsHide: true });
+      } catch { regenerating.delete(projectDir); return; }
+      child.on('error', () => regenerating.delete(projectDir));
+      child.on('exit', (code) => {
+        if (code !== 0) { regenerating.delete(projectDir); return; }
+        if (i + 1 < stages.length) return runStage(i + 1);
+        regenerating.delete(projectDir);
         // Marker records what the repo looked like when regen *started* —
         // edits made during a long regen correctly read as stale next check.
         fs.mkdirSync(paths(projectDir).dir, { recursive: true });
         fs.writeFileSync(paths(projectDir).marker,
           JSON.stringify({ stamp: stampAtSpawn, generatedAt: new Date().toISOString() }));
-      }
-    });
+      });
+    };
+    runStage(0);
   }
 
   // Non-blocking freshness guarantee: compare marker vs current stamp; kick a
@@ -142,8 +184,8 @@ function createGraphify({
     if (!available || !fs.existsSync(p.json)) return null;
     const serve = ['-m', 'graphify.serve', p.json, '--transport', 'stdio'];
     return {
-      graphify: hasUv
-        ? { type: 'stdio', command: 'uv', args: ['run', '--with', 'graphifyy', 'python', ...serve] }
+      graphify: uvCmd
+        ? { type: 'stdio', command: uvCmd, args: ['run', '--with', 'graphifyy', 'python', ...serve] }
         : { type: 'stdio', command: 'python', args: serve },
     };
   }

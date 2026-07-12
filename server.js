@@ -386,7 +386,7 @@ const MIME = {
   '.json': 'application/json', '.map': 'application/json', '.woff2': 'font/woff2',
 };
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.init) initProject(args.yamlPath);
   if (!fs.existsSync(args.yamlPath)) {
@@ -398,9 +398,14 @@ function main() {
   const sseClients = new Set();
 
   const graphify = createGraphify();
-  // Install check + first freshness pass, fully in the background; a failure
-  // degrades every graphify feature and surfaces via /api/graphify/status.
-  graphify.ensureInstalled().then((ok) => { if (ok) graphify.ensureGraphFresh(projectDir); });
+  // Graphify is a required dependency: block startup until the CLI resolves
+  // (bootstrapping uv if needed) and refuse to serve without it. The graph
+  // itself still generates in the background.
+  if (!await graphify.ensureInstalled()) {
+    console.error('graphify is required to run diagram-copilot. ' + graphify.installHint);
+    process.exit(1);
+  }
+  graphify.ensureGraphFresh(projectDir);
 
   const workflow = createWorkflow({
     projectDir,

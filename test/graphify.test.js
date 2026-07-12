@@ -37,13 +37,61 @@ test('ensureInstalled: no uv -> pipx install graphifyy', async () => {
 });
 
 test('ensureInstalled: nothing works -> unavailable with a hint, no throw', async () => {
-  const { execFileFn } = fakeExec([]);
+  const { calls, execFileFn } = fakeExec([]);
   const logged = [];
-  const g = createGraphify({ execFileFn, log: (m) => logged.push(m) });
+  const g = createGraphify({ execFileFn, existsFn: () => false, log: (m) => logged.push(m) });
   assert.strictEqual(await g.ensureInstalled(), false);
   assert.strictEqual(g.available, false);
   assert.match(g.installHint, /uv|pipx/);
   assert.strictEqual(logged.length, 1);
+  // The uv bootstrap installer was at least attempted before giving up.
+  const installer = process.platform === 'win32' ? 'powershell' : 'sh';
+  assert.ok(calls.some((c) => c[0] === installer));
+});
+
+const UV_INSTALLER = process.platform === 'win32' ? 'powershell' : 'sh';
+
+test('ensureInstalled: no uv at all -> bootstraps uv via installer, then uv tool install', async () => {
+  const ok = []; // installer success makes 'uv' start working
+  const calls = [];
+  const execFileFn = (cmd, args, opts, cb) => {
+    calls.push([cmd, ...args]);
+    if (cmd === UV_INSTALLER) { ok.push('uv'); return setImmediate(() => cb(null)); }
+    setImmediate(() => cb(ok.includes(cmd) ? null : new Error(`spawn ${cmd} ENOENT`)));
+  };
+  const g = createGraphify({ execFileFn, existsFn: () => false, log: () => {} });
+  assert.strictEqual(await g.ensureInstalled(), true);
+  assert.ok(calls.some((c) => c[0] === UV_INSTALLER));
+  assert.deepStrictEqual(calls.find((c) => c[0] === 'uv' && c[2] === 'install'),
+    ['uv', 'tool', 'install', 'graphifyy']);
+});
+
+test('ensureInstalled: fresh installs land in ~/.local/bin -> resolved by absolute path', async () => {
+  const os = require('node:os');
+  const pathMod = require('node:path');
+  const { EventEmitter } = require('node:events');
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const uvPath = pathMod.join(os.homedir(), '.local', 'bin', `uv${ext}`);
+  const gPath = pathMod.join(os.homedir(), '.local', 'bin', `graphify${ext}`);
+  const exists = new Set(); // what "installed on disk" looks like over time
+  const execFileFn = (cmd, args, opts, cb) => {
+    if (cmd === UV_INSTALLER) { exists.add(uvPath); return setImmediate(() => cb(null)); }
+    if (cmd === uvPath && args[1] === 'install') { exists.add(gPath); return setImmediate(() => cb(null)); }
+    // PATH lookups always fail; absolute paths work once the file exists.
+    setImmediate(() => cb(exists.has(cmd) ? null : new Error(`spawn ${cmd} ENOENT`)));
+  };
+  const spawned = [];
+  const g = createGraphify({
+    execFileFn,
+    existsFn: (p) => exists.has(p),
+    log: () => {},
+    execFileSyncFn: () => { throw new Error('not a git repo'); },
+    spawnFn: (cmd) => { spawned.push(cmd); return new EventEmitter(); },
+  });
+  assert.strictEqual(await g.ensureInstalled(), true);
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'gfy-'));
+  g.ensureGraphFresh(dir);
+  assert.strictEqual(spawned[0], gPath); // regen uses the resolved absolute path
 });
 
 test('ensureInstalled: kicks a background upgrade once when available', async () => {
@@ -60,12 +108,13 @@ const { EventEmitter } = require('node:events');
 
 // A graphify instance whose CLI is "installed", with fake git + fake spawn.
 // gitState = { head, porcelain } drives the staleness stamp.
-function installed({ gitState = { head: 'aaa', porcelain: '' } } = {}) {
+function installed({ gitState = { head: 'aaa', porcelain: '' }, env = { ANTHROPIC_API_KEY: 'x' } } = {}) {
   const spawned = [];
   const { execFileFn } = fakeExec(['graphify', 'uv']);
   const g = createGraphify({
     execFileFn,
     log: () => {},
+    env,
     execFileSyncFn: (cmd, args) => {
       if (args[0] === 'rev-parse') return gitState.head + '\n';
       if (args[0] === 'status') return gitState.porcelain;
@@ -91,8 +140,44 @@ test('ensureGraphFresh: no graph at all -> missing + background regen spawned', 
   assert.deepStrictEqual(g.ensureGraphFresh(dir), { state: 'missing' });
   assert.strictEqual(spawned.length, 1);
   assert.strictEqual(spawned[0].cmd, 'graphify');
-  assert.deepStrictEqual(spawned[0].args, ['.']);
+  assert.strictEqual(spawned[0].args[0], '.');
   assert.strictEqual(spawned[0].opts.cwd, dir);
+});
+
+test('regen with an LLM key: single full pass', async () => {
+  const { g, spawned, ready } = installed({ env: { ANTHROPIC_API_KEY: 'x' } });
+  await ready;
+  const dir = tmpProject();
+  g.ensureGraphFresh(dir);
+  assert.deepStrictEqual(spawned[0].args, ['.']);
+  spawned[0].child.emit('exit', 0);
+  assert.strictEqual(spawned.length, 1); // no second stage
+  assert.ok(fs.existsSync(g.paths(dir).marker));
+});
+
+test('regen keyless: --code-only then cluster-only --no-label, marker only after both', async () => {
+  const { g, spawned, ready } = installed({ env: {} });
+  await ready;
+  const dir = tmpProject();
+  g.ensureGraphFresh(dir);
+  assert.deepStrictEqual(spawned[0].args, ['.', '--code-only']);
+  spawned[0].child.emit('exit', 0);
+  assert.strictEqual(fs.existsSync(g.paths(dir).marker), false); // not done yet
+  assert.deepStrictEqual(spawned[1].args, ['cluster-only', '.', '--no-label']);
+  spawned[1].child.emit('exit', 0);
+  assert.ok(fs.existsSync(g.paths(dir).marker));
+});
+
+test('regen keyless: failed second stage writes no marker and clears in-flight', async () => {
+  const { g, spawned, ready } = installed({ env: {} });
+  await ready;
+  const dir = tmpProject();
+  g.ensureGraphFresh(dir);
+  spawned[0].child.emit('exit', 0);
+  spawned[1].child.emit('exit', 1);
+  assert.strictEqual(fs.existsSync(g.paths(dir).marker), false);
+  g.ensureGraphFresh(dir); // retries: not stuck in the regenerating set
+  assert.strictEqual(spawned.length, 3);
 });
 
 test('ensureGraphFresh: marker matches repo stamp -> fresh, nothing spawned', async () => {
