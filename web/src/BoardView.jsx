@@ -2,7 +2,7 @@ import { Badge } from '@astryxdesign/core/Badge';
 import { Text } from '@astryxdesign/core/Text';
 import { HStack } from '@astryxdesign/core/HStack';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
-import { TypeBadge, SpecFlag } from './chips.jsx';
+import { TypeBadge, SpecFlag, ServiceDot } from './chips.jsx';
 
 const COLUMNS = [
   { status: 'planned', title: 'Planned' },
@@ -10,7 +10,7 @@ const COLUMNS = [
   { status: 'shipped', title: 'Shipped' },
 ];
 
-export default function BoardView({ items, selectedId, onSelect }) {
+export default function BoardView({ items, selectedId, onSelect, servicesById = {} }) {
   return (
     <div className="board">
       {COLUMNS.map(({ status, title }) => {
@@ -31,6 +31,7 @@ export default function BoardView({ items, selectedId, onSelect }) {
                 <HStack gap={2} vAlign="center">
                   <TypeBadge type={item.type} />
                   <SpecFlag spec={item.spec} />
+                  <ServiceDot service={servicesById[item.id]} />
                 </HStack>
               </button>
             ))}

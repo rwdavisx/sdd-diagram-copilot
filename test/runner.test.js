@@ -1,0 +1,175 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const { createRunner, validateRun } = require('../runner');
+
+// Poll until fn() is truthy or timeout. Runner state changes are async
+// (child spawn, readiness timers), so every assertion on status polls.
+const until = async (fn, ms = 5000) => {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (await fn()) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+};
+
+const node = (script) => `"${process.execPath}" -e "${script}"`;
+
+function makeRunner(services, opts = {}) {
+  const events = [];
+  const runner = createRunner({
+    projectDir: __dirname,
+    loadServices: () => services,
+    broadcast: (ev) => events.push(ev),
+    readyDelayMs: 100,
+    pollMs: 50,
+    ...opts,
+  });
+  return { runner, events };
+}
+
+test('validateRun', () => {
+  assert.equal(validateRun({ cmd: 'node x.js' }), null);
+  assert.match(validateRun({}), /cmd/);
+  assert.match(validateRun({ cmd: 'x', port: 'nope' }), /port/);
+  assert.match(validateRun({ cmd: 'x', env: [] }), /env/);
+});
+
+test('start -> running (no port), stop -> stopped', async (t) => {
+  const { runner } = makeRunner([
+    { id: 'svc', name: 'Svc', run: { cmd: node('setInterval(()=>{},1000)') } },
+  ]);
+  t.after(() => runner.shutdownSync());
+  assert.deepEqual(runner.start('svc'), { ok: true });
+  assert.ok(await until(async () => (await runner.get('svc'))?.status === 'running'), 'should reach running');
+  assert.deepEqual(runner.stop('svc'), { ok: true });
+  assert.ok(await until(async () => (await runner.get('svc'))?.status === 'stopped'), 'should reach stopped');
+});
+
+test('non-zero exit without stop -> crashed, output captured', async (t) => {
+  const { runner } = makeRunner([
+    { id: 'boom', name: 'Boom', run: { cmd: node("console.log('kaput');process.exit(3)") } },
+  ]);
+  t.after(() => runner.shutdownSync());
+  runner.start('boom');
+  assert.ok(await until(async () => (await runner.get('boom'))?.status === 'crashed'), 'should crash');
+  const d = await runner.get('boom');
+  assert.ok(d.output.some((l) => l.includes('kaput')), `output should contain kaput: ${JSON.stringify(d.output)}`);
+});
+
+test('port readiness: starting until the port listens', async (t) => {
+  const port = 41473;
+  const { runner } = makeRunner([
+    { id: 'api', name: 'Api', run: { cmd: node(`setTimeout(()=>require('net').createServer().listen(${port}),300);setInterval(()=>{},1000)`), port } },
+  ]);
+  t.after(() => runner.shutdownSync());
+  runner.start('api');
+  assert.equal((await runner.get('api')).status, 'starting');
+  assert.ok(await until(async () => (await runner.get('api'))?.status === 'running'), 'should reach running once port listens');
+});
+
+test('start errors: unknown id 404, invalid config 400, double start 409', async (t) => {
+  const { runner } = makeRunner([
+    { id: 'ok', name: 'Ok', run: { cmd: node('setInterval(()=>{},1000)') } },
+    { id: 'bad', name: 'Bad', run: {} },
+  ]);
+  t.after(() => runner.shutdownSync());
+  assert.equal(runner.start('nope').code, 404);
+  assert.equal(runner.start('bad').code, 400);
+  assert.deepEqual(runner.start('ok'), { ok: true });
+  assert.equal(runner.start('ok').code, 409);
+});
+
+test('restart: running -> stopped -> running again with a new pid', async (t) => {
+  const { runner } = makeRunner([
+    { id: 'svc', name: 'Svc', run: { cmd: node('setInterval(()=>{},1000)') } },
+  ]);
+  t.after(() => runner.shutdownSync());
+  runner.start('svc');
+  await until(async () => (await runner.get('svc'))?.status === 'running');
+  const pid1 = (await runner.get('svc')).pid;
+  const r = await runner.restart('svc');
+  assert.deepEqual(r, { ok: true });
+  assert.ok(await until(async () => {
+    const d = await runner.get('svc');
+    return d?.status === 'running' && d.pid !== pid1;
+  }), 'should be running under a new pid');
+});
+
+test('list: stopped by default, external when the port is occupied by someone else', async (t) => {
+  const netMod = require('net');
+  const port = 41573;
+  const ext = netMod.createServer().listen(port, '127.0.0.1');
+  t.after(() => ext.close());
+  await new Promise((r) => ext.once('listening', r));
+  const { runner } = makeRunner([
+    { id: 'a', name: 'A', run: { cmd: node('setInterval(()=>{},1000)') } },
+    { id: 'b', name: 'B', run: { cmd: node('setInterval(()=>{},1000)'), port } },
+  ]);
+  t.after(() => runner.shutdownSync());
+  const entries = Object.fromEntries((await runner.list()).map((e) => [e.id, e]));
+  assert.equal(entries.a.status, 'stopped');
+  assert.equal(entries.b.status, 'external');
+  assert.equal(runner.stop('b').code, 409, 'cannot stop an external process');
+});
+
+test('list: stale flag when a live service config changes', async (t) => {
+  const services = [{ id: 'svc', name: 'Svc', run: { cmd: node('setInterval(()=>{},1000)') } }];
+  const { runner } = makeRunner(services);
+  t.after(() => runner.shutdownSync());
+  runner.start('svc');
+  await until(async () => (await runner.get('svc'))?.status === 'running');
+  assert.equal((await runner.list())[0].stale, false);
+  services[0] = { ...services[0], run: { ...services[0].run, cmd: services[0].run.cmd + ' ' } };
+  assert.equal((await runner.list())[0].stale, true);
+});
+
+test('startAll starts in dependency order; stopAll stops everything', async (t) => {
+  const services = [
+    { id: 'web', name: 'Web', depends: ['api'], run: { cmd: node('setInterval(()=>{},1000)') } },
+    { id: 'api', name: 'Api', run: { cmd: node('setInterval(()=>{},1000)') } },
+  ];
+  const { runner, events } = makeRunner(services);
+  t.after(() => runner.shutdownSync());
+  await runner.startAll();
+  const starting = events.filter((e) => e.status === 'starting').map((e) => e.id);
+  assert.deepEqual(starting, ['api', 'web'], 'api (dependency) must start before web');
+  const listed = await runner.list();
+  assert.ok(listed.every((e) => e.status === 'running'), JSON.stringify(listed));
+  await runner.stopAll();
+  assert.ok((await runner.list()).every((e) => e.status === 'stopped'));
+});
+
+test('startAll: a crashing dependency stops dependents from starting', async (t) => {
+  const services = [
+    { id: 'web', name: 'Web', depends: ['api'], run: { cmd: node('setInterval(()=>{},1000)') } },
+    { id: 'api', name: 'Api', run: { cmd: node('process.exit(1)') } },
+  ];
+  const { runner, events } = makeRunner(services);
+  t.after(() => runner.shutdownSync());
+  const r = await runner.startAll();
+  assert.deepEqual(new Set(r.failed), new Set(['api', 'web']), JSON.stringify(r));
+  const starting = events.filter((e) => e.status === 'starting').map((e) => e.id);
+  assert.deepEqual(starting, ['api'], 'web must never have been started');
+  assert.equal((await runner.get('web')).status, 'stopped');
+});
+
+test('loadProject validates run blocks', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const pathMod = require('path');
+  const { loadProject } = require('../server');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'dc-run-'));
+  const yamlPath = pathMod.join(dir, 'project.yaml');
+  fs.writeFileSync(yamlPath, [
+    'project: t',
+    'items:',
+    '  - { id: good, name: G, type: backend, status: planned, run: { cmd: node x.js, port: 3000 } }',
+    '  - { id: nocmd, name: N, type: backend, status: planned, run: { port: 3000 } }',
+    '  - { id: badport, name: B, type: backend, status: planned, run: { cmd: x, port: yes } }',
+  ].join('\n'));
+  const { errors } = loadProject(yamlPath);
+  assert.ok(errors.some((e) => e.includes('"nocmd"') && e.includes('cmd')), JSON.stringify(errors));
+  assert.ok(errors.some((e) => e.includes('"badport"') && e.includes('port')), JSON.stringify(errors));
+  assert.ok(!errors.some((e) => e.includes('"good"')), JSON.stringify(errors));
+});

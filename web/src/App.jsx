@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -12,6 +12,8 @@ import DesignView from './DesignView.jsx';
 import SchemaView from './SchemaView.jsx';
 import TestsView from './TestsView.jsx';
 import GraphView from './GraphView.jsx';
+import RunView from './RunView.jsx';
+import { useServices } from './useServices.jsx';
 import { Button } from '@astryxdesign/core/Button';
 import { usePaneWidth, usePersistedOpen } from './resize.jsx';
 import { onServerEvent } from './useWorkflowFeed.jsx';
@@ -27,6 +29,8 @@ export default function App() {
   const [loadError, setLoadError] = useState(null);
   const [detailW, onDetailResize] = usePaneWidth('dc-detail-w', 380, { min: 300, max: 720, fromRight: true });
   const [detailOpen, toggleDetail] = usePersistedOpen('dc-detail-open');
+  const services = useServices();
+  const servicesById = useMemo(() => Object.fromEntries(services.map((s) => [s.id, s])), [services]);
 
   const refetch = useCallback(() => {
     fetch('/api/project')
@@ -79,6 +83,7 @@ export default function App() {
           <Tab value="priority" label="Priority" />
           <Tab value="workflow" label="Workflow" />
           <Tab value="graph" label="Graph" />
+          <Tab value="run" label="Run" />
         </TabList>
       </header>
 
@@ -93,17 +98,18 @@ export default function App() {
       )}
 
       <main>
-        {view === 'design' && <DesignView items={items} flows={data.flows || []} selectedId={selectedId} onSelect={setSelectedId} />}
-        {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
+        {view === 'design' && <DesignView items={items} flows={data.flows || []} selectedId={selectedId} onSelect={setSelectedId} servicesById={servicesById} />}
+        {view === 'board' && <BoardView items={items} selectedId={selectedId} onSelect={setSelectedId} servicesById={servicesById} />}
         {view === 'schemas' && <SchemaView items={items} onSelect={setSelectedId} />}
         {view === 'tests' && <TestsView items={items} onSelect={setSelectedId} />}
         {view === 'priority' && <PriorityView items={items} selectedId={selectedId} onSelect={setSelectedId} onStartWorkflow={startWorkflow} />}
         {view === 'workflow' && <WorkflowView items={items} selectedId={selectedId} onSelect={setSelectedId} />}
         {view === 'graph' && <GraphView />}
+        {view === 'run' && <RunView services={services} onSelect={setSelectedId} />}
         {selected && detailOpen && (
           <>
             <div className="pane-resizer" onPointerDown={onDetailResize} />
-            <DetailPanel item={selected} items={items} width={detailW} onSelect={setSelectedId} onClose={() => setSelectedId(null)} onCollapse={toggleDetail} onStartWorkflow={startWorkflow} />
+            <DetailPanel item={selected} items={items} width={detailW} service={servicesById[selected.id]} onSelect={setSelectedId} onClose={() => setSelectedId(null)} onCollapse={toggleDetail} onStartWorkflow={startWorkflow} />
           </>
         )}
         {selected && !detailOpen && (

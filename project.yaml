@@ -522,3 +522,15 @@ items:
       - name: "startStep passes graphify mcpServers through to runSession"
         file: test/workflow.test.js
         status: passing
+  - id: service-runner
+    name: Service Runner
+    type: backend
+    status: shipped
+    spec: docs/superpowers/specs/2026-07-12-service-runner-design.md
+    notes: >-
+      run: blocks on items become controllable services — start/stop/restart,
+      live status over SSE, Run tab + dots on diagram/board + detail-panel
+      controls. runner.js spawns children of the server; tree-kill on stop;
+      everything dies with the server. v2: docker, log streaming, auto-restart.
+    tests:
+      - { name: "runner: lifecycle, readiness, crash, external, start-all", file: test/runner.test.js, status: passing }
