@@ -39,7 +39,14 @@ items:
       - name: rejects a bad password   # required
         file: test/login.test.js       # optional
         status: passing                # passing | failing | unknown (default unknown)
+    run:                    # optional; makes the item a controllable service in the Run tab
+      cmd: npm run dev              # required
+      cwd: web                      # optional; relative to this yaml file
+      port: 5173                    # optional; enables readiness detection (starting -> running when the port answers) and external-process detection
+      env: { NODE_ENV: development }  # optional
 ```
+
+Services are child processes of the dashboard server and die with it.
 
 The server validates on every load: unknown `type`/`status`, duplicate `id`s,
 and `depends` referencing nonexistent ids are surfaced as errors in the UI.
