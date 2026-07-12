@@ -139,3 +139,23 @@ test('startAll starts in dependency order; stopAll stops everything', async (t) 
   await runner.stopAll();
   assert.ok((await runner.list()).every((e) => e.status === 'stopped'));
 });
+
+test('loadProject validates run blocks', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const pathMod = require('path');
+  const { loadProject } = require('../server');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'dc-run-'));
+  const yamlPath = pathMod.join(dir, 'project.yaml');
+  fs.writeFileSync(yamlPath, [
+    'project: t',
+    'items:',
+    '  - { id: good, name: G, type: backend, status: planned, run: { cmd: node x.js, port: 3000 } }',
+    '  - { id: nocmd, name: N, type: backend, status: planned, run: { port: 3000 } }',
+    '  - { id: badport, name: B, type: backend, status: planned, run: { cmd: x, port: yes } }',
+  ].join('\n'));
+  const { errors } = loadProject(yamlPath);
+  assert.ok(errors.some((e) => e.includes('"nocmd"') && e.includes('cmd')), JSON.stringify(errors));
+  assert.ok(errors.some((e) => e.includes('"badport"') && e.includes('port')), JSON.stringify(errors));
+  assert.ok(!errors.some((e) => e.includes('"good"')), JSON.stringify(errors));
+});

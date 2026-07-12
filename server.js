@@ -11,6 +11,7 @@ const yaml = require('js-yaml');
 const { createWorkflow, STEPS } = require('./workflow');
 const { startSession } = require('./sessions');
 const { createGraphify } = require('./graphify');
+const { createRunner, validateRun } = require('./runner');
 
 const TYPES = ['frontend', 'backend', 'integration'];
 const STATUSES = ['planned', 'in-progress', 'shipped'];
@@ -101,6 +102,10 @@ function loadProject(yamlPath) {
           errors.push(`Item ${label}: test "${t.name}" has unknown status "${t.status}" (expected ${TEST_STATUSES.join(' | ')})`);
         }
       }
+    }
+    if (item.run != null) {
+      const bad = validateRun(item.run);
+      if (bad) errors.push(`Item ${label}: ${bad}`);
     }
   }
   for (const item of items) {
@@ -420,6 +425,20 @@ async function main() {
     graphify,
   });
 
+  const runner = createRunner({
+    projectDir,
+    loadServices: () => loadProject(args.yamlPath).items.filter((i) => i && i.id && i.run != null),
+    broadcast: (ev) => {
+      const frame = `event: service\ndata: ${JSON.stringify(ev)}\n\n`;
+      for (const client of sseClients) client.write(frame);
+    },
+  });
+  // Children die with us: Ctrl+C, kill, or normal exit all sweep the tree.
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => { runner.shutdownSync(); process.exit(0); });
+  }
+  process.on('exit', () => runner.shutdownSync());
+
   // Watch the yaml's directory (watching the file directly breaks on
   // editors/agents that replace the file) and notify viewers, debounced.
   let debounce = null;
@@ -480,6 +499,29 @@ async function main() {
       if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
       if (!graphify.available) return sendJson(res, 503, { error: 'graphify is not installed' });
       return sendJson(res, 200, graphify.ensureGraphFresh(projectDir, { force: true }));
+    }
+
+    if (url.pathname === '/api/services' && req.method === 'GET') {
+      return runner.list().then((services) => sendJson(res, 200, { services }));
+    }
+
+    if ((url.pathname === '/api/services/start-all' || url.pathname === '/api/services/stop-all') && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      const op = url.pathname.endsWith('start-all') ? runner.startAll() : runner.stopAll();
+      return op.then((r) => sendJson(res, 200, r));
+    }
+
+    const svcAction = url.pathname.match(/^\/api\/services\/([^/]+)\/(start|stop|restart)$/);
+    if (svcAction && req.method === 'POST') {
+      if (!originAllowed(req, args.port)) return sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      return Promise.resolve(runner[svcAction[2]](svcAction[1])).then((r) =>
+        r.error ? sendJson(res, r.code || 400, { error: r.error }) : sendJson(res, 200, r));
+    }
+
+    const svcGet = url.pathname.match(/^\/api\/services\/([^/]+)$/);
+    if (svcGet && req.method === 'GET') {
+      return runner.get(svcGet[1]).then((s) =>
+        s ? sendJson(res, 200, s) : sendJson(res, 404, { error: `Unknown service "${svcGet[1]}"` }));
     }
 
     if (url.pathname === '/api/workflow' && req.method === 'GET') {
