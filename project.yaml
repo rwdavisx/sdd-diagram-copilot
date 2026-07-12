@@ -394,14 +394,14 @@ items:
   - id: graphify-integration
     name: "Graphify Integration"
     type: integration
-    status: in-progress
+    status: shipped
     spec: specs/graphify-integration.md
     depends: [graphify-install, graphify-refresh, graphify-session-context, graphify-mcp-attach, graphify-graph-tab]
     notes: "Umbrella: Graphify codebase knowledge graph feeds workflow LLM sessions (better + quicker code knowledge). https://github.com/Graphify-Labs/graphify"
   - id: graphify-install
     name: "Graphify Auto-Install"
     type: backend
-    status: planned
+    status: shipped
     spec: specs/graphify-integration.md
     notes: "On server start / first project open: if `graphify` not on PATH, auto-install via `uv tool install graphifyy` (fallback: pipx). Install failure degrades gracefully â€” sessions run without graph, UI shows the install hint. Also `uv tool upgrade` periodically to stay current."
     tests:
@@ -423,7 +423,7 @@ items:
   - id: graphify-refresh
     name: "Graphify Refresh Pipeline"
     type: backend
-    status: planned
+    status: shipped
     spec: specs/graphify-integration.md
     depends: [graphify-install]
     notes: "At session start: compare project HEAD/dirty state to graph's recorded commit; if stale, run `graphify .` in background (non-blocking). One shared graph in the main checkout; worktree sessions point at it. Session starts immediately with the current graph."
@@ -462,7 +462,7 @@ items:
   - id: graphify-session-context
     name: "Graph Context in Session Prompt"
     type: backend
-    status: planned
+    status: shipped
     spec: specs/graphify-integration.md
     depends: [graphify-refresh]
     notes: "Inject a pointer into each workflow session's initial prompt: GRAPH_REPORT.md location + 'consult the graph before exploring'. Instant orientation, zero tool calls."
@@ -485,7 +485,7 @@ items:
   - id: graphify-graph-tab
     name: "Graph Tab (embed graph.html)"
     type: frontend
-    status: planned
+    status: shipped
     spec: specs/graphify-integration.md
     depends: [graphify-refresh]
     notes: "New top-level tab embedding Graphify's interactive graph.html in an iframe, served by the diagram-copilot server from the project's graph output. Status chip: fresh / regenerating / unavailable."
@@ -505,7 +505,7 @@ items:
   - id: graphify-mcp-attach
     name: "Graphify MCP Server per Session"
     type: integration
-    status: planned
+    status: shipped
     spec: specs/graphify-integration.md
     depends: [graphify-refresh]
     notes: "Attach Graphify's MCP server (stdio) to each Agent SDK session via mcpServers option in sessions.js, giving the LLM live graph query tools (callers, shortest-path, explain-entity)."
